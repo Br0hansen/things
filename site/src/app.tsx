@@ -38,6 +38,20 @@ const STATUS_COPY: Record<ItemStatus, { label: string; helper: string }> = {
   soon: { label: "Snart tom", helper: "Kan tas med" },
   empty: { label: "Tom", helper: "Må kjøpes" },
 };
+const STATUS_FILTER_KEY = "things:status-filters:";
+
+function loadStatusFilters(homeId: string): ItemStatus[] {
+  try {
+    const stored = JSON.parse(localStorage.getItem(`${STATUS_FILTER_KEY}${homeId}`) ?? "[]");
+    if (!Array.isArray(stored)) return [];
+    return stored.filter((status): status is ItemStatus => status === "have" || status === "soon" || status === "empty");
+  } catch { return []; }
+}
+
+function saveStatusFilters(homeId: string, filters: ItemStatus[]) {
+  try { localStorage.setItem(`${STATUS_FILTER_KEY}${homeId}`, JSON.stringify(filters)); }
+  catch { /* Filtreringen virker fortsatt i denne appøkten. */ }
+}
 
 function Icon({ name }: { name: "cabinet" | "cart" | "search" | "close" | "check" | "wifi" | "person" | "house" | "trash" | "pencil" }) {
   const common = { width: 22, height: 22, viewBox: "0 0 24 24", fill: "none", "aria-hidden": true } as const;
@@ -188,6 +202,7 @@ export function App() {
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [showHome, setShowHome] = useState(false);
   const [completed, setCompleted] = useState<Map<string, ItemStatus>>(new Map());
+  const [statusFilters, setStatusFilters] = useState<ItemStatus[]>([]);
   const [online, setOnline] = useState(navigator.onLine);
   const [syncState, setSyncState] = useState<SyncState>("ready");
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
@@ -219,6 +234,11 @@ export function App() {
     document.addEventListener("visibilitychange", onVisible);
     return () => { clearInterval(poll); document.removeEventListener("visibilitychange", onVisible); };
   }, [snapshot.identity?.deviceId]);
+
+  useEffect(() => {
+    const homeId = snapshot.identity?.homeId;
+    setStatusFilters(homeId ? loadStatusFilters(homeId) : []);
+  }, [snapshot.identity?.homeId]);
 
   function commit(updater: (current: AppSnapshot) => AppSnapshot) {
     setSnapshot((current) => {
@@ -261,8 +281,11 @@ export function App() {
   const activeItems = useMemo(() => snapshot.items.filter((item) => !item.deletedAt).sort((a, b) => a.name.localeCompare(b.name, "nb-NO")), [snapshot.items]);
   const visibleItems = useMemo(() => {
     const needle = normalizeItemName(query);
-    return needle ? activeItems.filter((item) => item.normalizedName.includes(needle)) : activeItems;
-  }, [activeItems, query]);
+    return activeItems.filter((item) =>
+      (statusFilters.length === 0 || statusFilters.includes(item.status))
+      && (!needle || item.normalizedName.includes(needle)),
+    );
+  }, [activeItems, query, statusFilters]);
   const shoppingItems = useMemo(() => activeItems.filter((item) => item.status !== "have"), [activeItems]);
   const mustBuy = shoppingItems.filter((item) => item.status === "empty");
   const mayBuy = shoppingItems.filter((item) => item.status === "soon");
@@ -271,6 +294,15 @@ export function App() {
   const others = snapshot.members.filter((member) => member.id !== snapshot.identity?.memberId);
   const exactMatch = activeItems.find((item) => item.normalizedName === normalizeItemName(query));
   const haveCount = activeItems.length - shoppingItems.length;
+
+  function toggleStatusFilter(status: ItemStatus) {
+    setStatusFilters((current) => {
+      const next = current.includes(status) ? current.filter((entry) => entry !== status) : [...current, status];
+      const homeId = snapshotRef.current.identity?.homeId;
+      if (homeId) saveStatusFilters(homeId, next);
+      return next;
+    });
+  }
 
   function submitQuickEntry(event: Event) {
     event.preventDefault();
@@ -335,6 +367,7 @@ export function App() {
 
   return (
     <div class="app-shell">
+      <div class="wordmark app-wordmark" aria-label="Things">Things</div>
       {!online && <div class="connection-banner"><Icon name="wifi" /> Frakoblet – endringer lagres på telefonen</div>}
       {online && syncState === "error" && <button class="connection-banner error" onClick={() => void syncNow()}>Kunne ikke synkronisere. Prøv igjen.</button>}
       <header class="page-header">
@@ -343,11 +376,11 @@ export function App() {
           <button class="home-button" aria-label="Hjem" title="Hjem" onClick={() => setShowHome(true)}><Icon name="house" /></button>
         </div>
         {tab === "cabinet" && activeItems.length > 0 && (
-          <button class="status-summary" aria-label={`${mustBuy.length} må kjøpes, ${mayBuy.length} snart tom, ${haveCount} har. Gå til Handle.`} onClick={() => setTab("shop")}>
-            {mustBuy.length > 0 && <span class="summary-pill empty">{mustBuy.length} må kjøpes</span>}
-            {mayBuy.length > 0 && <span class="summary-pill soon">{mayBuy.length} snart tom</span>}
-            {haveCount > 0 && <span class="summary-pill have">{haveCount} har</span>}
-          </button>
+          <div class="status-summary" role="group" aria-label="Filtrer skapet etter status">
+            <button class={`summary-pill empty ${statusFilters.includes("empty") ? "active" : ""}`} aria-pressed={statusFilters.includes("empty")} onClick={() => toggleStatusFilter("empty")}>{mustBuy.length} må kjøpes</button>
+            <button class={`summary-pill soon ${statusFilters.includes("soon") ? "active" : ""}`} aria-pressed={statusFilters.includes("soon")} onClick={() => toggleStatusFilter("soon")}>{mayBuy.length} snart tom</button>
+            <button class={`summary-pill have ${statusFilters.includes("have") ? "active" : ""}`} aria-pressed={statusFilters.includes("have")} onClick={() => toggleStatusFilter("have")}>{haveCount} har</button>
+          </div>
         )}
         {tab === "cabinet" ? (
           others.length > 0
@@ -366,7 +399,7 @@ export function App() {
                 <StatusChip status={item.status} />
               </button>
             ))}
-            {visibleItems.length === 0 && <p class="no-results">Ingen varer passer med «{query.trim()}».</p>}
+            {visibleItems.length === 0 && <p class="no-results">{query.trim() ? `Ingen varer passer med «${query.trim()}».` : "Ingen varer har de valgte statusene."}</p>}
           </div>
         )}
 

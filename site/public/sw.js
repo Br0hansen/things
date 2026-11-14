@@ -1,6 +1,6 @@
-const CACHE = "things-shell-v1";
+const CACHE = "things-shell-v2";
 const BASE = new URL(self.registration.scope).pathname;
-const SHELL = [BASE, `${BASE}manifest.webmanifest`, `${BASE}icon.svg`, `${BASE}icon-maskable.svg`];
+const SHELL = [BASE, `${BASE}manifest.webmanifest`, `${BASE}icon.svg`, `${BASE}icon-maskable.svg`, `${BASE}fonts/inter-tight-latin-variable.woff2`];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting()));

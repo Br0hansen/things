@@ -1,5 +1,13 @@
+@font-face {
+  font-family: "Inter Tight";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/inter-tight-latin-variable.woff2") format("woff2");
+}
+
 :root {
-  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: "Inter Tight", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: var(--text);
   background: var(--secondary);
   font-synthesis: none;
@@ -61,6 +69,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--focus-ring)
 .app-shell { position: relative; width: min(100%, 520px); min-height: 100dvh; margin: 0 auto; overflow-x: hidden; background: var(--background); }
 .loading-screen { display: grid; min-height: 100dvh; place-items: center; background: var(--background); }
 .wordmark { font-size: 20px; font-weight: 750; letter-spacing: -.5px; }
+.app-wordmark { position: absolute; z-index: 2; top: calc(24px + env(safe-area-inset-top, 0px)); left: 20px; line-height: 24px; }
 
 .onboarding { display: flex; flex-direction: column; min-height: 100dvh; padding: calc(28px + env(safe-area-inset-top, 0px)) 24px calc(24px + var(--safe-bottom)); background: var(--background); }
 .welcome-copy { margin: auto 0; }
@@ -108,12 +117,17 @@ input { width: 100%; min-height: 52px; border: 1px solid var(--line); border-rad
 .status-chip.have { background: var(--have-bg); }.status-chip.have svg { color: var(--have); }
 .status-chip.soon { background: var(--soon-bg); }.status-chip.soon svg { color: var(--soon); }
 .status-chip.empty { background: var(--empty-bg); }.status-chip.empty svg { color: var(--empty); }
-.status-summary { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; border: 0; padding: 0; background: transparent; text-align: left; cursor: pointer; }
-.summary-pill { display: inline-flex; align-items: center; gap: 6px; height: 30px; border-radius: 15px; padding: 0 11px; color: var(--text); font-size: 13px; font-weight: 700; white-space: nowrap; }
-.summary-pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; }
-.summary-pill.empty { background: var(--empty-bg); }.summary-pill.empty::before { background: var(--empty); }
-.summary-pill.soon { background: var(--soon-bg); }.summary-pill.soon::before { background: var(--soon); }
-.summary-pill.have { background: var(--have-bg); }.summary-pill.have::before { background: var(--have); }
+.status-summary { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; }
+.summary-pill { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; border: 1px solid var(--line); border-radius: 22px; padding: 0 12px; color: var(--muted); background: var(--fill); font-size: 13px; font-weight: 700; white-space: nowrap; cursor: pointer; }
+.summary-pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; opacity: .65; }
+.summary-pill.empty::before { background: var(--empty); }
+.summary-pill.soon::before { background: var(--soon); }
+.summary-pill.have::before { background: var(--have); }
+.summary-pill.active { border-color: transparent; color: var(--text); }
+.summary-pill.active::before { opacity: 1; }
+.summary-pill.empty.active { background: var(--empty-bg); }
+.summary-pill.soon.active { background: var(--soon-bg); }
+.summary-pill.have.active { background: var(--have-bg); }
 .no-results { padding: 24px 20px; color: var(--muted); }
 .empty-state { display: grid; min-height: 45dvh; place-content: center; padding: 40px; text-align: center; }
 .empty-state h2 { margin: 0 0 8px; font-size: 20px; }
@@ -204,7 +218,7 @@ button { transition: background-color 120ms ease-out, opacity 120ms ease-out, fi
 .choice-row.soon:active { background-color: var(--soon-bg); filter: brightness(.95); }
 .choice-row.empty:active { background-color: var(--empty-bg); filter: brightness(.95); }
 .primary-button:not(:disabled):active, .danger-button:not(:disabled):active, .quick-entry button:active, .share-card button:active { filter: brightness(.9); }
-.secondary-button:active, .sheet-close:active, .icon-button:active, .home-button:active, .tab-bar button:active, .status-summary:active { opacity: .7; }
+.secondary-button:active, .sheet-close:active, .icon-button:active, .home-button:active, .tab-bar button:active, .summary-pill:active { opacity: .7; }
 
 @keyframes sheet-in { from { transform: translateY(100%); } to { transform: translateY(0); } }
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
