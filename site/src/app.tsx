@@ -39,7 +39,7 @@ const STATUS_COPY: Record<ItemStatus, { label: string; helper: string }> = {
   empty: { label: "Tom", helper: "Må kjøpes" },
 };
 
-function Icon({ name }: { name: "cabinet" | "cart" | "search" | "close" | "check" | "wifi" | "person" | "house" }) {
+function Icon({ name }: { name: "cabinet" | "cart" | "search" | "close" | "check" | "wifi" | "person" | "house" | "trash" | "pencil" }) {
   const common = { width: 22, height: 22, viewBox: "0 0 24 24", fill: "none", "aria-hidden": true } as const;
   if (name === "cabinet") return <svg {...common}><path d="M5 3.75h14v16.5H5zM12 3.75v16.5M9.2 11.5h.1M14.7 11.5h.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>;
   if (name === "cart") return <svg {...common}><path d="M3.5 5h2l1.8 9.2h10.8l2-6.3H6.1M9 19a1 1 0 1 0 0-2 1 1 0 0 0 0 2ZM17 19a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>;
@@ -48,6 +48,8 @@ function Icon({ name }: { name: "cabinet" | "cart" | "search" | "close" | "check
   if (name === "wifi") return <svg {...common}><path d="M4 9a12 12 0 0 1 16 0M7 12a7.5 7.5 0 0 1 10 0M10 15a3 3 0 0 1 4 0M12 18h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>;
   if (name === "person") return <svg {...common}><circle cx="9" cy="8" r="3.25" stroke="currentColor" stroke-width="1.8" /><path d="M3.75 18.5c.45-3.25 2.2-5 5.25-5s4.8 1.75 5.25 5M17.5 8.5v6M14.5 11.5h6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>;
   if (name === "house") return <svg {...common}><path d="M4 10.5 12 4l8 6.5M6.25 9v10.25h11.5V9M10 19.25v-5h4v5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>;
+  if (name === "trash") return <svg {...common}><path d="M4.5 7h15M9.5 7V4.75h5V7M6.5 7l.9 12.25h9.2L17.5 7M10 11v5M14 11v5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" /></svg>;
+  if (name === "pencil") return <svg {...common}><path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3ZM13.5 7.5l3 3" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" /></svg>;
   return <svg {...common}><path d="m6.5 12.5 3.2 3.2 7.8-8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>;
 }
 
@@ -67,8 +69,16 @@ function Sheet({ title, onClose, children, className = "" }: { title: string; on
   );
 }
 
-function StatusDot({ status }: { status: ItemStatus }) {
-  return <span class={`status-dot status-${status}`} aria-hidden="true" />;
+/** Each status has its own shape, so it never relies on color alone. */
+function StatusIcon({ status }: { status: ItemStatus }) {
+  const common = { width: 16, height: 16, viewBox: "0 0 24 24", "aria-hidden": true } as const;
+  if (status === "have") return <svg {...common} fill="none"><path d="m5 12.5 4.5 4.5L19 7.5" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" /></svg>;
+  if (status === "soon") return <svg {...common}><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2.6" /><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" /></svg>;
+  return <svg {...common} fill="none"><circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="2.6" /></svg>;
+}
+
+function StatusChip({ status }: { status: ItemStatus }) {
+  return <span class={`status-chip ${status}`}><StatusIcon status={status} />{STATUS_COPY[status].label}</span>;
 }
 
 function EmptyState({ title, text }: { title: string; text: string }) {
@@ -181,6 +191,8 @@ export function App() {
   const [online, setOnline] = useState(navigator.onLine);
   const [syncState, setSyncState] = useState<SyncState>("ready");
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
+  const [deletedItem, setDeletedItem] = useState<Item | null>(null);
+  const undoTimer = useRef<number | null>(null);
   const syncTimer = useRef<number | null>(null);
   const syncingRef = useRef(false);
 
@@ -257,7 +269,14 @@ export function App() {
   const completedItems = activeItems.filter((item) => completed.has(item.id));
   const selectedItem = snapshot.items.find((item) => item.id === selectedItemId) ?? null;
   const others = snapshot.members.filter((member) => member.id !== snapshot.identity?.memberId);
-  const exactMatch = activeItems.some((item) => item.normalizedName === normalizeItemName(query));
+  const exactMatch = activeItems.find((item) => item.normalizedName === normalizeItemName(query));
+  const haveCount = activeItems.length - shoppingItems.length;
+
+  function submitQuickEntry(event: Event) {
+    event.preventDefault();
+    if (exactMatch) { setSelectedItemId(exactMatch.id); setQuery(""); return; }
+    addItem();
+  }
 
   function addItem() {
     if (!snapshot.identity || !normalizeItemName(query) || exactMatch) return;
@@ -288,6 +307,22 @@ export function App() {
     updateItem(item, { status: previousStatus });
   }
 
+  function deleteItem(item: Item) {
+    updateItem(item, { deletedAt: new Date().toISOString() });
+    setSelectedItemId(null);
+    setDeletedItem(item);
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    undoTimer.current = window.setTimeout(() => setDeletedItem(null), 5000);
+  }
+
+  function undoDelete() {
+    if (!deletedItem) return;
+    const latest = snapshotRef.current.items.find((entry) => entry.id === deletedItem.id);
+    if (latest?.deletedAt) updateItem(latest, { deletedAt: null });
+    if (undoTimer.current) clearTimeout(undoTimer.current);
+    setDeletedItem(null);
+  }
+
   async function resetLocal() {
     snapshotRef.current = structuredClone(EMPTY_SNAPSHOT);
     setSnapshot(structuredClone(EMPTY_SNAPSHOT));
@@ -307,6 +342,13 @@ export function App() {
           <h1>{tab === "cabinet" ? "Skapet" : "Handle"}</h1>
           <button class="home-button" aria-label="Hjem" title="Hjem" onClick={() => setShowHome(true)}><Icon name="house" /></button>
         </div>
+        {tab === "cabinet" && activeItems.length > 0 && (
+          <button class="status-summary" aria-label={`${mustBuy.length} må kjøpes, ${mayBuy.length} snart tom, ${haveCount} har. Gå til Handle.`} onClick={() => setTab("shop")}>
+            {mustBuy.length > 0 && <span class="summary-pill empty">{mustBuy.length} må kjøpes</span>}
+            {mayBuy.length > 0 && <span class="summary-pill soon">{mayBuy.length} snart tom</span>}
+            {haveCount > 0 && <span class="summary-pill have">{haveCount} har</span>}
+          </button>
+        )}
         {tab === "cabinet" ? (
           others.length > 0
             ? <button class="shared-home" onClick={() => setShowHome(true)}>Delt med {others.map((member) => member.displayName).join(", ")}</button>
@@ -321,7 +363,7 @@ export function App() {
             {visibleItems.map((item) => (
               <button class="item-row" key={item.id} onClick={() => setSelectedItemId(item.id)}>
                 <span class="item-name">{item.name}</span>
-                <span class="item-status"><StatusDot status={item.status} />{STATUS_COPY[item.status].label}</span>
+                <StatusChip status={item.status} />
               </button>
             ))}
             {visibleItems.length === 0 && <p class="no-results">Ingen varer passer med «{query.trim()}».</p>}
@@ -331,8 +373,8 @@ export function App() {
         {tab === "shop" && (
           shoppingItems.length === 0 && completedItems.length === 0 ? <EmptyState title="Alt er i hus" text="Når noe blir tomt, dukker det opp her automatisk." /> :
           <div class="shopping-sections">
-            {mustBuy.length > 0 && <ShoppingSection title="Må kjøpes" items={mustBuy} onCheck={checkItem} />}
-            {mayBuy.length > 0 && <ShoppingSection title="Kan tas med" items={mayBuy} onCheck={checkItem} />}
+            {mustBuy.length > 0 && <ShoppingSection title="Må kjøpes" tone="empty" items={mustBuy} onCheck={checkItem} />}
+            {mayBuy.length > 0 && <ShoppingSection title="Kan tas med" tone="soon" items={mayBuy} onCheck={checkItem} />}
             {completedItems.length > 0 && (
               <section class="shopping-section completed-section">
                 <div class="section-heading"><h2>Ferdig</h2><button onClick={() => setCompleted(new Map())}>Skjul ferdige</button></div>
@@ -345,11 +387,11 @@ export function App() {
 
       <div class={`bottom-dock ${tab === "shop" ? "without-search" : ""}`}>
         {tab === "cabinet" && (
-          <div class="quick-entry">
+          <form class="quick-entry" onSubmit={submitQuickEntry}>
             <Icon name="search" />
-            <input aria-label="Finn eller legg til vare" value={query} onInput={(event) => setQuery(event.currentTarget.value)} placeholder="Finn eller legg til vare" />
-            {query && !exactMatch && <button onClick={addItem}>Legg til</button>}
-          </div>
+            <input aria-label="Finn eller legg til vare" value={query} onInput={(event) => setQuery(event.currentTarget.value)} placeholder="Finn eller legg til vare" enterKeyHint="done" />
+            {query && !exactMatch && <button type="submit">Legg til</button>}
+          </form>
         )}
         <nav class="tab-bar" aria-label="Hovednavigasjon">
           <button class={tab === "cabinet" ? "active" : ""} onClick={() => setTab("cabinet")}><Icon name="cabinet" /><span>Skapet</span></button>
@@ -357,31 +399,33 @@ export function App() {
         </nav>
       </div>
 
-      {selectedItem && <ItemSheet item={selectedItem} members={snapshot.members} onClose={() => setSelectedItemId(null)} onChange={(changes) => { updateItem(selectedItem, changes); if (changes.status || changes.deletedAt) setSelectedItemId(null); }} />}
+      {deletedItem && <div class="undo-toast" role="status"><span>«{deletedItem.name}» er slettet</span><button onClick={undoDelete}>Angre</button></div>}
+      {selectedItem && <ItemSheet item={selectedItem} members={snapshot.members} onClose={() => setSelectedItemId(null)} onDelete={() => deleteItem(selectedItem)} onChange={(changes) => { updateItem(selectedItem, changes); if (changes.status) setSelectedItemId(null); }} />}
       {showHome && <HomeSheet identity={snapshot.identity} members={snapshot.members} syncState={syncState} online={online} installPrompt={installPrompt} onClose={() => setShowHome(false)} onSynced={() => void syncNow()} onLeave={async () => { if (isRemoteConfigured) await leaveRemoteHome(snapshot.identity!); await resetLocal(); }} onDelete={async () => { if (isRemoteConfigured) await deleteRemoteHome(snapshot.identity!); await resetLocal(); }} />}
     </div>
   );
 }
 
-function ShoppingSection({ title, items, onCheck }: { title: string; items: Item[]; onCheck(item: Item): void }) {
-  return <section class="shopping-section"><div class="section-heading"><h2>{title}</h2></div><div class="edge-list">{items.map((item) => <button class="item-row shopping-row" key={item.id} onClick={() => onCheck(item)}><span class="item-name">{item.name}</span><span class="check-circle" aria-label="Sett til Har" /></button>)}</div></section>;
+function ShoppingSection({ title, tone, items, onCheck }: { title: string; tone: "empty" | "soon"; items: Item[]; onCheck(item: Item): void }) {
+  return <section class="shopping-section"><div class={`section-heading ${tone}`}><h2>{title}</h2></div><div class="edge-list">{items.map((item) => <button class="item-row shopping-row" key={item.id} onClick={() => onCheck(item)}><span class="item-name">{item.name}</span><span class="check-circle" aria-label="Sett til Har" /></button>)}</div></section>;
 }
 
-function ItemSheet({ item, members, onClose, onChange }: { item: Item; members: Member[]; onClose(): void; onChange(changes: Partial<Pick<Item, "name" | "status" | "deletedAt">>): void }) {
+function ItemSheet({ item, members, onClose, onChange, onDelete }: { item: Item; members: Member[]; onClose(): void; onChange(changes: Partial<Pick<Item, "name" | "status">>): void; onDelete(): void }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(item.name);
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const changedBy = members.find((member) => member.id === item.changedBy)?.displayName ?? "en i hjemmet";
   return <Sheet title={item.name} onClose={onClose}>
     {!editing ? <>
       <p class="sheet-question">Hva er status hjemme?</p>
-      <div class="choice-list">{(["have", "soon", "empty"] as ItemStatus[]).map((status) => <button class={`choice-row ${item.status === status ? "selected" : ""}`} onClick={() => onChange({ status })}><StatusDot status={status} /><span><strong>{STATUS_COPY[status].label}</strong><small>{STATUS_COPY[status].helper}</small></span>{item.status === status && <Icon name="check" />}</button>)}</div>
+      <div class="choice-list">{(["have", "soon", "empty"] as ItemStatus[]).map((status) => <button class={`choice-row ${status} ${item.status === status ? "selected" : ""}`} aria-pressed={item.status === status} onClick={() => onChange({ status })}><span class="choice-icon"><StatusIcon status={status} /></span><span><strong>{STATUS_COPY[status].label}</strong><small>{STATUS_COPY[status].helper}</small></span>{item.status === status ? <span class="choice-tick"><Icon name="check" /></span> : <span />}</button>)}</div>
       <p class="last-changed">Sist endret av {changedBy} {formatRelativeTime(item.changedAt)}</p>
-      <button class="plain-row" onClick={() => setEditing(true)}>Administrer vare</button>
+      <div class="sheet-actions">
+        <button class="sheet-action" onClick={() => setEditing(true)}><Icon name="pencil" />Endre navn</button>
+        <button class="sheet-action danger" onClick={onDelete}><Icon name="trash" />Slett vare</button>
+      </div>
       <button class="sheet-close" onClick={onClose}>Lukk</button>
     </> : <>
-      <div class="form-group"><label>Varenavn<input value={name} onInput={(event) => setName(event.currentTarget.value)} maxlength={60} /></label><button class="primary-button compact" disabled={!normalizeItemName(name)} onClick={() => { onChange({ name: cleanDisplayName(name) }); setEditing(false); }}>Lagre navn</button></div>
-      <div class="danger-zone">{confirmDelete ? <><p>Varen fjernes fra alle telefonene.</p><button class="danger-button" onClick={() => onChange({ deletedAt: new Date().toISOString() })}>Bekreft sletting</button><button class="secondary-button" onClick={() => setConfirmDelete(false)}>Avbryt</button></> : <button class="danger-link" onClick={() => setConfirmDelete(true)}>Slett vare</button>}</div>
+      <form class="form-group" onSubmit={(event) => { event.preventDefault(); if (!normalizeItemName(name)) return; onChange({ name: cleanDisplayName(name) }); setEditing(false); }}><label>Varenavn<input value={name} onInput={(event) => setName(event.currentTarget.value)} maxlength={60} enterKeyHint="done" /></label><button class="primary-button compact" disabled={!normalizeItemName(name)}>Lagre navn</button></form>
       <button class="sheet-close" onClick={() => setEditing(false)}>Tilbake</button>
     </>}
   </Sheet>;
