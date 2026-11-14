@@ -69,7 +69,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--focus-ring)
 .app-shell { position: relative; width: min(100%, 520px); min-height: 100dvh; margin: 0 auto; overflow-x: hidden; background: var(--background); }
 .loading-screen { display: grid; min-height: 100dvh; place-items: center; background: var(--background); }
 .wordmark { font-size: 20px; font-weight: 750; letter-spacing: -.5px; }
-.app-wordmark { position: absolute; z-index: 2; top: calc(24px + env(safe-area-inset-top, 0px)); left: 20px; line-height: 24px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 .onboarding { display: flex; flex-direction: column; min-height: 100dvh; padding: calc(28px + env(safe-area-inset-top, 0px)) 24px calc(24px + var(--safe-bottom)); background: var(--background); }
 .welcome-copy { margin: auto 0; }
@@ -101,7 +101,7 @@ input { width: 100%; min-height: 52px; border: 1px solid var(--line); border-rad
 .connection-banner { position: fixed; z-index: 30; top: calc(8px + env(safe-area-inset-top, 0px)); left: 50%; display: flex; align-items: center; gap: 8px; min-height: 36px; max-width: calc(100% - 32px); transform: translateX(-50%); border: 0; border-radius: 18px; padding: 7px 13px; color: var(--toast-fg); background: var(--toast-bg); font-size: 13px; white-space: nowrap; backdrop-filter: blur(16px); }
 .connection-banner svg { width: 16px; height: 16px; }
 .connection-banner.error { color: var(--on-empty); background: var(--empty); cursor: pointer; }
-.page-header { display: grid; gap: 12px; padding: calc(62px + env(safe-area-inset-top, 0px)) 20px 18px; background: var(--background); }
+.page-header { display: grid; gap: 12px; padding: calc(14px + env(safe-area-inset-top, 0px)) 20px 18px; background: var(--background); }
 .page-title-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .page-header h1 { margin: 0; font-size: 34px; line-height: 41px; font-weight: 740; letter-spacing: -1.1px; }
 .page-header p { margin: -10px 0 0; color: var(--muted); font-size: 15px; line-height: 20px; }

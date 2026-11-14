@@ -500,12 +500,12 @@ export function App() {
 
   return (
     <div class="app-shell">
-      <div class="wordmark app-wordmark" aria-label="Things">Things</div>
       {!online && <div class="connection-banner"><Icon name="wifi" /> Frakoblet – endringer lagres på telefonen</div>}
       {online && syncState === "error" && <button class="connection-banner error" onClick={() => void syncNow()}>Kunne ikke synkronisere. Prøv igjen.</button>}
       <header class="page-header">
         <div class="page-title-row">
-          <h1>{tab === "cabinet" ? "Skapet" : "Handle"}</h1>
+          <div class="wordmark" aria-hidden="true">Things</div>
+          <h1 class="sr-only">{tab === "cabinet" ? "Skapet" : "Handle"}</h1>
           <button class="home-button" aria-label="Hjem" title="Hjem" onClick={() => setShowHome(true)}><Icon name="house" /></button>
         </div>
         {tab === "cabinet" && activeItems.length > 0 && (
