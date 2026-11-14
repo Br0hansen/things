@@ -1,4 +1,5 @@
 import type { AppSnapshot, Identity, Member, SyncResponse } from "../types";
+import { getAccessToken } from "./auth";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.replace(/\/$/, "") ?? "";
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY ?? "";
@@ -11,12 +12,13 @@ interface ApiOptions {
 
 async function callApi<T>(action: string, payload: Record<string, unknown>, options: ApiOptions = {}): Promise<T> {
   if (!isRemoteConfigured) throw new Error("Supabase er ikke konfigurert ennå.");
+  const accessToken = await getAccessToken();
   const response = await fetch(`${supabaseUrl}/functions/v1/things-api`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       apikey: supabaseKey,
-      authorization: `Bearer ${supabaseKey}`,
+      authorization: `Bearer ${accessToken ?? supabaseKey}`,
       ...(options.deviceToken ? { "x-things-device-token": options.deviceToken } : {}),
     },
     body: JSON.stringify({ action, ...payload }),
@@ -53,6 +55,10 @@ export async function createTransfer(identity: Identity): Promise<{ token: strin
 
 export async function consumeTransfer(transferToken: string): Promise<{ identity: Identity; members: Member[] }> {
   return callApi("consume_transfer", { transferToken });
+}
+
+export async function claimRemoteAccount(identity: Identity): Promise<{ identity: Identity; members: Member[] }> {
+  return callApi("claim_account", {}, { deviceToken: identity.deviceToken });
 }
 
 export async function leaveRemoteHome(identity: Identity): Promise<void> {

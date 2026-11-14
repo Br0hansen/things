@@ -1,9 +1,8 @@
 # Things i DailyPep Supabase
 
-Alle objekter er isolert med prefikset `things_`. Migrasjonen gir ikke `anon`
-eller `authenticated` direkte tabelltilgang. Nettleseren bruker bare Edge
-Function-en `things-api`, som validerer en tilfeldig enhetsnøkkel før data leses
-eller endres.
+Alle objekter er isolert med prefikset `things_`. Migrasjon `003` legger til
+`things_users`, medlemsroller og kobling til Supabase Auth. Eksisterende
+enhetsnøkler beholdes midlertidig slik at dagens hjem kan migreres uten datatap.
 
 ## Koble til DailyPep
 
@@ -12,12 +11,15 @@ eller endres.
    `supabase link --project-ref <DAILYPEP_PROJECT_REF>`
 3. Kjør migrasjonen: `supabase db push`
 4. Sett tillatt app-origin:
-   `supabase secrets set THINGS_ALLOWED_ORIGIN=https://<things-domene>`
-5. Publiser funksjonen:
+   `supabase secrets set THINGS_ALLOWED_ORIGIN=https://br0hansen.github.io`
+5. Sett Auth Site URL til `https://br0hansen.github.io/things/` og tillat samme
+   redirect-URL samt `http://127.0.0.1:5173/things/` for lokal utvikling.
+6. Publiser funksjonen:
    `supabase functions deploy things-api --no-verify-jwt`
-6. Legg prosjektets URL og anon/publishable key i `site/.env.local`, basert på
+7. Legg prosjektets URL og anon/publishable key i `site/.env.local`, basert på
    `site/.env.example`.
 
-Service role-nøkkelen brukes bare av Supabase sitt servermiljø og skal aldri
-legges i frontendens miljøfil.
+`--no-verify-jwt` er nødvendig mens gamle enheter støttes. Nye Auth-handlinger
+validerer tilgangstokenet inne i Edge Function-en. Service role-nøkkelen brukes
+bare av Supabase sitt servermiljø og skal aldri legges i frontendens miljøfil.
 

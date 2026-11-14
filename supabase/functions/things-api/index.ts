@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "npm:@supabase/supabase-js@2";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -34,8 +34,31 @@ async function authenticate(request: Request) {
   return data as { id: string; home_id: string; member_id: string };
 }
 
+async function authenticatedUser(request: Request, required = false) {
+  const authorization = request.headers.get("authorization") ?? "";
+  const token = authorization.toLowerCase().startsWith("bearer ") ? authorization.slice(7).trim() : "";
+  if (!token) {
+    if (required) throw new Error("auth_required");
+    return null;
+  }
+  const { data, error } = await db.auth.getUser(token);
+  if (error || !data.user) {
+    if (required) throw new Error("auth_required");
+    return null;
+  }
+  return data.user;
+}
+
 function identity(result: Record<string, string>, deviceToken: string) {
-  return { homeId: result.homeId, memberId: result.memberId, deviceId: result.deviceId, displayName: result.displayName, deviceToken };
+  return {
+    homeId: result.homeId,
+    memberId: result.memberId,
+    deviceId: result.deviceId,
+    displayName: result.displayName,
+    deviceToken,
+    accountLinked: Boolean(result.userId),
+    role: result.role ?? undefined,
+  };
 }
 
 function mapItem(row: Record<string, unknown>) {
@@ -47,11 +70,17 @@ function mapItem(row: Record<string, unknown>) {
 }
 
 function mapMember(row: Record<string, unknown>) {
-  return { id: row.id, homeId: row.home_id, displayName: row.display_name };
+  return {
+    id: row.id,
+    homeId: row.home_id,
+    displayName: row.display_name,
+    role: row.role,
+    accountLinked: Boolean(row.user_id),
+  };
 }
 
 async function membersFor(homeId: string) {
-  const { data, error } = await db.from("things_members").select("id,home_id,display_name").eq("home_id", homeId).is("left_at", null).order("created_at");
+  const { data, error } = await db.from("things_members").select("id,home_id,display_name,role,user_id").eq("home_id", homeId).is("left_at", null).order("created_at");
   if (error) throw error;
   return (data ?? []).map(mapMember);
 }
@@ -73,7 +102,10 @@ Deno.serve(async (request) => {
 
     if (action === "create_home") {
       const deviceToken = randomToken();
-      const { data, error } = await db.rpc("things_create_home", { p_display_name: body.displayName, p_token_hash: await hashToken(deviceToken) });
+      const user = await authenticatedUser(request);
+      const { data, error } = user
+        ? await db.rpc("things_create_authenticated_home", { p_display_name: body.displayName, p_token_hash: await hashToken(deviceToken), p_auth_user_id: user.id })
+        : await db.rpc("things_create_home", { p_display_name: body.displayName, p_token_hash: await hashToken(deviceToken) });
       if (error) throw error;
       await track("home_created");
       return json({ identity: identity(data, deviceToken), members: [{ id: data.memberId, homeId: data.homeId, displayName: data.displayName }] }, 200, origin);
@@ -81,7 +113,11 @@ Deno.serve(async (request) => {
 
     if (action === "join_invite") {
       const deviceToken = randomToken();
-      const { data, error } = await db.rpc("things_join_invite", { p_token_hash: await hashToken(String(body.inviteToken ?? "")), p_display_name: body.displayName, p_device_token_hash: await hashToken(deviceToken) });
+      const user = await authenticatedUser(request);
+      const params = { p_token_hash: await hashToken(String(body.inviteToken ?? "")), p_display_name: body.displayName, p_device_token_hash: await hashToken(deviceToken) };
+      const { data, error } = user
+        ? await db.rpc("things_join_authenticated_invite", { ...params, p_auth_user_id: user.id })
+        : await db.rpc("things_join_invite", params);
       if (error) throw error;
       await track("partner_joined");
       return json({ identity: identity(data, deviceToken), members: await membersFor(data.homeId) }, 200, origin);
@@ -92,6 +128,15 @@ Deno.serve(async (request) => {
       const { data, error } = await db.rpc("things_consume_transfer", { p_token_hash: await hashToken(String(body.transferToken ?? "")), p_device_token_hash: await hashToken(deviceToken) });
       if (error) throw error;
       return json({ identity: identity(data, deviceToken), members: await membersFor(data.homeId) }, 200, origin);
+    }
+
+    if (action === "claim_account") {
+      const user = await authenticatedUser(request, true);
+      const device = await authenticate(request);
+      const deviceToken = request.headers.get("x-things-device-token") ?? "";
+      const { data, error } = await db.rpc("things_claim_member", { p_device_id: device.id, p_auth_user_id: user!.id });
+      if (error) throw error;
+      return json({ identity: identity(data, deviceToken), members: await membersFor(device.home_id) }, 200, origin);
     }
 
     const device = await authenticate(request);
@@ -148,7 +193,7 @@ Deno.serve(async (request) => {
     return json({ error: "unknown_action" }, 400, origin);
   } catch (cause) {
     const raw = cause instanceof Error ? cause.message : String((cause as { message?: unknown })?.message ?? "unknown_error");
-    const publicMessage = raw.includes("invite_invalid") ? "Invitasjonen er brukt eller utløpt." : raw.includes("transfer_invalid") ? "Overføringslenken er brukt eller utløpt." : raw.includes("home_full") ? "Hjemmet er fullt." : raw.includes("device_invalid") ? "Denne telefonen har ikke lenger tilgang." : "Noe gikk galt. Prøv igjen.";
+    const publicMessage = raw.includes("invite_invalid") ? "Invitasjonen er brukt eller utløpt." : raw.includes("transfer_invalid") ? "Overføringslenken er brukt eller utløpt." : raw.includes("home_full") ? "Hjemmet er fullt." : raw.includes("device_invalid") ? "Denne telefonen har ikke lenger tilgang." : raw.includes("auth_required") ? "Logg inn for å fortsette." : raw.includes("member_already_claimed") ? "Dette medlemskapet er allerede koblet til en annen konto." : raw.includes("already_member") ? "Denne kontoen er allerede medlem av hjemmet." : "Noe gikk galt. Prøv igjen.";
     console.error("things-api", raw);
     return json({ error: publicMessage }, 400, origin);
   }

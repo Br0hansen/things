@@ -23,15 +23,21 @@ Alle databaseobjekter er avgrenset med `things_`-prefiks. Migrasjonen ligger i
 og Edge Function-en ligger i [`supabase/functions/things-api`](supabase/functions/things-api).
 
 1. Koble Supabase CLI til DailyPep-prosjektet.
-2. Kjør `supabase db push` fra repoets rot.
-3. Sett `THINGS_ALLOWED_ORIGIN` som Supabase-secret.
-4. Kjør `supabase functions deploy things-api --no-verify-jwt`.
-5. Kopier `site/.env.example` til `site/.env.local` og fyll inn DailyPep-prosjektets
+2. Kjør `supabase db push` fra repoets rot. Migrasjon `003` legger til det
+   bakoverkompatible Auth-grunnlaget uten å fjerne eksisterende enhetsnøkler.
+3. Sett `THINGS_ALLOWED_ORIGIN=https://br0hansen.github.io` som Supabase-secret.
+4. Kjør `supabase functions deploy things-api --no-verify-jwt`. JWT-verifisering
+   gjøres inne i funksjonen i hybridperioden, fordi gamle enheter fortsatt må virke.
+5. Under **Authentication → URL Configuration** setter du Site URL til
+   `https://br0hansen.github.io/things/` og legger til både produksjonsadressen og
+   `http://127.0.0.1:5173/things/` som tillatte redirect-adresser.
+6. Kopier `site/.env.example` til `site/.env.local` og fyll inn DailyPep-prosjektets
    URL og anon/publishable key.
 
 Service role-nøkkelen skal aldri inn i `site/.env.local` eller frontendkoden.
-Direkte klienttilgang til `things_*`-tabellene er sperret med RLS; all tilgang
-går gjennom Edge Function-en etter validering av en hash-lagret enhetsnøkkel.
+Direkte klienttilgang til `things_*`-tabellene er sperret med RLS. Nye brukere
+logger inn med Supabase Auth. Eksisterende medlemmer kan koble en gyldig
+enhetsnøkkel til kontoen sin uten å miste hjem eller varer.
 
 ## Verifisering
 

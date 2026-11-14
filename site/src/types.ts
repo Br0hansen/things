@@ -1,9 +1,12 @@
 export type ItemStatus = "have" | "soon" | "empty";
+export type MemberRole = "owner" | "member";
 
 export interface Member {
   id: string;
   homeId: string;
   displayName: string;
+  role?: MemberRole;
+  accountLinked?: boolean;
 }
 
 export interface Item {
@@ -25,6 +28,8 @@ export interface Identity {
   deviceId: string;
   deviceToken: string;
   displayName: string;
+  accountLinked?: boolean;
+  role?: MemberRole;
 }
 
 export type MutationOperation = "upsert" | "delete";
