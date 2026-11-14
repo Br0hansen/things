@@ -1,0 +1,3 @@
+[functions.things-api]
+verify_jwt = false
+

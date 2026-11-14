@@ -1,0 +1,13 @@
+site/node_modules/
+site/dist/
+site/.env
+site/.env.local
+site/coverage/
+site/playwright-report/
+site/test-results/
+site/.openai/
+.cursor/
+.DS_Store
+things-site-deploy.tar.gz
+
+
