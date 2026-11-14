@@ -31,19 +31,23 @@ interface InstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 }
 
+const MAX_MEMBERS = 6; // Keep in sync with things-api and things_join_invite.
+
 const STATUS_COPY: Record<ItemStatus, { label: string; helper: string }> = {
   have: { label: "Har", helper: "Vi har nok" },
   soon: { label: "Snart tom", helper: "Kan tas med" },
   empty: { label: "Tom", helper: "Må kjøpes" },
 };
 
-function Icon({ name }: { name: "cabinet" | "cart" | "search" | "close" | "check" | "wifi" }) {
+function Icon({ name }: { name: "cabinet" | "cart" | "search" | "close" | "check" | "wifi" | "person" | "house" }) {
   const common = { width: 22, height: 22, viewBox: "0 0 24 24", fill: "none", "aria-hidden": true } as const;
   if (name === "cabinet") return <svg {...common}><path d="M5 3.75h14v16.5H5zM12 3.75v16.5M9.2 11.5h.1M14.7 11.5h.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>;
   if (name === "cart") return <svg {...common}><path d="M3.5 5h2l1.8 9.2h10.8l2-6.3H6.1M9 19a1 1 0 1 0 0-2 1 1 0 0 0 0 2ZM17 19a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>;
   if (name === "search") return <svg {...common}><circle cx="10.5" cy="10.5" r="6.5" stroke="currentColor" stroke-width="1.8" /><path d="m15.5 15.5 4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>;
   if (name === "close") return <svg {...common}><path d="m7 7 10 10M17 7 7 17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>;
   if (name === "wifi") return <svg {...common}><path d="M4 9a12 12 0 0 1 16 0M7 12a7.5 7.5 0 0 1 10 0M10 15a3 3 0 0 1 4 0M12 18h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>;
+  if (name === "person") return <svg {...common}><circle cx="9" cy="8" r="3.25" stroke="currentColor" stroke-width="1.8" /><path d="M3.75 18.5c.45-3.25 2.2-5 5.25-5s4.8 1.75 5.25 5M17.5 8.5v6M14.5 11.5h6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>;
+  if (name === "house") return <svg {...common}><path d="M4 10.5 12 4l8 6.5M6.25 9v10.25h11.5V9M10 19.25v-5h4v5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>;
   return <svg {...common}><path d="m6.5 12.5 3.2 3.2 7.8-8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>;
 }
 
@@ -153,7 +157,7 @@ function Onboarding({ onReady }: { onReady(snapshot: AppSnapshot): void }) {
       <div>
         <p class="eyebrow">{mode === "create" ? "Nytt hjem" : "Invitasjon"}</p>
         <h1>{mode === "create" ? "Hva heter du?" : "Bli med i hjemmet"}</h1>
-        <p>{mode === "create" ? "Partneren din skriver sitt eget navn når invitasjonen åpnes." : "Invitasjonen kan bare brukes én gang."}</p>
+        <p>{mode === "create" ? "Den du inviterer skriver sitt eget navn når invitasjonen åpnes." : "Invitasjonen kan bare brukes én gang."}</p>
       </div>
       <form onSubmit={mode === "create" ? createHome : joinHome} class="onboarding-form">
         <label>Navn<input autofocus value={name} onInput={(e) => setName(e.currentTarget.value)} maxlength={60} autocomplete="name" placeholder="Ditt navn" /></label>
@@ -252,7 +256,7 @@ export function App() {
   const mayBuy = shoppingItems.filter((item) => item.status === "soon");
   const completedItems = activeItems.filter((item) => completed.has(item.id));
   const selectedItem = snapshot.items.find((item) => item.id === selectedItemId) ?? null;
-  const partner = snapshot.members.find((member) => member.id !== snapshot.identity?.memberId);
+  const others = snapshot.members.filter((member) => member.id !== snapshot.identity?.memberId);
   const exactMatch = activeItems.some((item) => item.normalizedName === normalizeItemName(query));
 
   function addItem() {
@@ -299,8 +303,15 @@ export function App() {
       {!online && <div class="connection-banner"><Icon name="wifi" /> Frakoblet – endringer lagres på telefonen</div>}
       {online && syncState === "error" && <button class="connection-banner error" onClick={() => void syncNow()}>Kunne ikke synkronisere. Prøv igjen.</button>}
       <header class="page-header">
-        <h1>{tab === "cabinet" ? "Skapet" : "Handle"}</h1>
-        {tab === "cabinet" ? <button class="shared-home" onClick={() => setShowHome(true)}>Delt med {partner?.displayName ?? "ingen ennå"}</button> : <p>{shoppingItems.length} {shoppingItems.length === 1 ? "vare" : "varer"}</p>}
+        <div class="page-title-row">
+          <h1>{tab === "cabinet" ? "Skapet" : "Handle"}</h1>
+          <button class="home-button" aria-label="Hjem" title="Hjem" onClick={() => setShowHome(true)}><Icon name="house" /></button>
+        </div>
+        {tab === "cabinet" ? (
+          others.length > 0
+            ? <button class="shared-home" onClick={() => setShowHome(true)}>Delt med {others.map((member) => member.displayName).join(", ")}</button>
+            : <button class="invite-home" onClick={() => setShowHome(true)}><Icon name="person" /><span><strong>Inviter en person</strong><small>Del skapet og handlelisten</small></span></button>
+        ) : <p>{shoppingItems.length} {shoppingItems.length === 1 ? "vare" : "varer"}</p>}
       </header>
 
       <main class={`page-content ${tab}`}>
@@ -370,7 +381,7 @@ function ItemSheet({ item, members, onClose, onChange }: { item: Item; members: 
       <button class="sheet-close" onClick={onClose}>Lukk</button>
     </> : <>
       <div class="form-group"><label>Varenavn<input value={name} onInput={(event) => setName(event.currentTarget.value)} maxlength={60} /></label><button class="primary-button compact" disabled={!normalizeItemName(name)} onClick={() => { onChange({ name: cleanDisplayName(name) }); setEditing(false); }}>Lagre navn</button></div>
-      <div class="danger-zone">{confirmDelete ? <><p>Varen fjernes fra begge telefonene.</p><button class="danger-button" onClick={() => onChange({ deletedAt: new Date().toISOString() })}>Bekreft sletting</button><button class="secondary-button" onClick={() => setConfirmDelete(false)}>Avbryt</button></> : <button class="danger-link" onClick={() => setConfirmDelete(true)}>Slett vare</button>}</div>
+      <div class="danger-zone">{confirmDelete ? <><p>Varen fjernes fra alle telefonene.</p><button class="danger-button" onClick={() => onChange({ deletedAt: new Date().toISOString() })}>Bekreft sletting</button><button class="secondary-button" onClick={() => setConfirmDelete(false)}>Avbryt</button></> : <button class="danger-link" onClick={() => setConfirmDelete(true)}>Slett vare</button>}</div>
       <button class="sheet-close" onClick={() => setEditing(false)}>Tilbake</button>
     </>}
   </Sheet>;
@@ -396,13 +407,27 @@ function HomeSheet({ identity, members, syncState, online, installPrompt, onClos
 
   async function copyLink() { await navigator.clipboard.writeText(shareLink); setMessage("Lenken er kopiert."); }
 
+  async function shareInvite() {
+    if (!shareLink) return;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: "Bli med i Things", text: "Bli med i hjemmet mitt i Things.", url: shareLink });
+        setMessage("Invitasjonen er delt.");
+        return;
+      } catch (cause) {
+        if (cause instanceof DOMException && cause.name === "AbortError") return;
+      }
+    }
+    await copyLink();
+  }
+
   return <Sheet title="Hjem" onClose={onClose} className="home-sheet">
-    <div class="settings-group"><h3>Medlemmer</h3>{members.map((member) => <div class="settings-row"><span>{member.displayName}</span>{member.id === identity.memberId && <small>Deg</small>}</div>)}{members.length < 2 && <button class="settings-action" disabled={busy || !isRemoteConfigured} onClick={() => void makeLink("invite")}>Inviter partner</button>}</div>
-    {shareLink && <div class="share-card"><input readonly value={shareLink} aria-label="Delbar lenke" /><button onClick={() => void copyLink()}>Kopier</button><p>{message}</p></div>}
+    <div class="settings-group"><h3>Medlemmer</h3>{members.map((member) => <div class="settings-row"><span>{member.displayName}</span>{member.id === identity.memberId && <small>Deg</small>}</div>)}{members.length < MAX_MEMBERS && <button class="settings-action invite-action" disabled={busy || !isRemoteConfigured} onClick={() => void makeLink("invite")}><span><strong>{busy ? "Lager invitasjon …" : "Inviter en person"}</strong><small>Lenken kan brukes én gang</small></span><Icon name="person" /></button>}</div>
+    {shareLink && <div class="share-card"><p class="share-intro">Send lenken til personen du vil dele hjemmet med.</p><input readonly value={shareLink} aria-label="Delbar lenke" /><div class="share-actions"><button class="share-primary" onClick={() => void shareInvite()}>Del invitasjon</button><button class="share-secondary" onClick={() => void copyLink()}>Kopier lenke</button></div><p>{message}</p></div>}
     {!shareLink && message && <p class="form-error settings-message">{message}</p>}
     <div class="settings-group"><h3>Things</h3><button class="settings-action" onClick={onSynced}><span>Synkstatus</span><small>{!isRemoteConfigured ? "Lokal modus" : !online ? "Frakoblet" : syncState === "syncing" ? "Synkroniserer …" : syncState === "error" ? "Feil – prøv igjen" : "Oppdatert"}</small></button><button class="settings-action" disabled={busy || !isRemoteConfigured} onClick={() => void makeLink("transfer")}>Overfør til ny telefon</button><button class="settings-action" onClick={() => installPrompt ? void installPrompt.prompt() : setMessage("Bruk «Legg til på Hjem-skjerm» i nettlesermenyen.")}>Installer Things</button><button class="settings-action" onClick={() => setShowPrivacy(true)}>Personvern</button></div>
     <div class="settings-group"><h3>Tilgang</h3><button class="settings-action danger-link" onClick={() => setShowDanger(true)}>Forlat eller slett hjem</button></div>
-    {showDanger && <div class="danger-panel"><button class="danger-link" onClick={() => void onLeave()}>Forlat hjem</button><label>Skriv SLETT for å slette hjemmet for begge<input value={deleteText} onInput={(event) => setDeleteText(event.currentTarget.value)} /></label><button class="danger-button" disabled={deleteText !== "SLETT"} onClick={() => void onDelete()}>Slett hjem og alle data</button></div>}
+    {showDanger && <div class="danger-panel"><button class="danger-link" onClick={() => void onLeave()}>Forlat hjem</button><label>Skriv SLETT for å slette hjemmet for alle<input value={deleteText} onInput={(event) => setDeleteText(event.currentTarget.value)} /></label><button class="danger-button" disabled={deleteText !== "SLETT"} onClick={() => void onDelete()}>Slett hjem og alle data</button></div>}
     <button class="sheet-close" onClick={onClose}>Lukk</button>
     {showPrivacy && <Sheet title="Personvern" onClose={() => setShowPrivacy(false)}><div class="privacy-copy"><p>Things lagrer navn, varer og statuser for å holde det delte hjemmet synkronisert. Appen lagrer en kryptert enhetsnøkkel lokalt.</p><p>Varenavn og medlemsnavn brukes aldri til analyse. Når et hjem slettes, fjernes hjem, medlemmer, enheter, varer og invitasjoner.</p><p>Tekniske hendelser kan telles uten fritekst for å oppdage synkfeil og forbedre tjenesten.</p></div><button class="sheet-close" onClick={() => setShowPrivacy(false)}>Lukk</button></Sheet>}
   </Sheet>;

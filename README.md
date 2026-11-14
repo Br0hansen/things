@@ -1,6 +1,6 @@
 # Things
 
-Things er en lokal-først PWA for to personer som deler kjøkken. Appen har et
+Things er en lokal-først PWA for opptil seks personer som deler kjøkken. Appen har et
 én-håndsgrensesnitt for statusene `Har`, `Snart tom` og `Tom`, og lager
 handlelisten fra de samme varene.
 

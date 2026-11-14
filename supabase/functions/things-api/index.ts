@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const ALLOWED_ORIGIN = Deno.env.get("THINGS_ALLOWED_ORIGIN") ?? "*";
+const MAX_MEMBERS = 6; // Keep in sync with things_join_invite in the migrations.
 const db = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 
 function cors(origin: string | null) {
@@ -97,8 +98,7 @@ Deno.serve(async (request) => {
 
     if (action === "create_invite") {
       const { count } = await db.from("things_members").select("id", { count: "exact", head: true }).eq("home_id", device.home_id).is("left_at", null);
-      if ((count ?? 0) >= 2) return json({ error: "Hjemmet har allerede to medlemmer." }, 409, origin);
-      await db.from("things_invites").update({ used_at: new Date().toISOString() }).eq("home_id", device.home_id).eq("kind", "partner").is("used_at", null);
+      if ((count ?? 0) >= MAX_MEMBERS) return json({ error: "Hjemmet er fullt." }, 409, origin);
       const token = randomToken();
       const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
       const { error } = await db.from("things_invites").insert({ home_id: device.home_id, kind: "partner", token_hash: await hashToken(token), expires_at: expiresAt });
@@ -147,8 +147,8 @@ Deno.serve(async (request) => {
 
     return json({ error: "unknown_action" }, 400, origin);
   } catch (cause) {
-    const raw = cause instanceof Error ? cause.message : "unknown_error";
-    const publicMessage = raw.includes("invite_invalid") ? "Invitasjonen er brukt eller utløpt." : raw.includes("transfer_invalid") ? "Overføringslenken er brukt eller utløpt." : raw.includes("home_full") ? "Hjemmet har allerede to medlemmer." : raw.includes("device_invalid") ? "Denne telefonen har ikke lenger tilgang." : "Noe gikk galt. Prøv igjen.";
+    const raw = cause instanceof Error ? cause.message : String((cause as { message?: unknown })?.message ?? "unknown_error");
+    const publicMessage = raw.includes("invite_invalid") ? "Invitasjonen er brukt eller utløpt." : raw.includes("transfer_invalid") ? "Overføringslenken er brukt eller utløpt." : raw.includes("home_full") ? "Hjemmet er fullt." : raw.includes("device_invalid") ? "Denne telefonen har ikke lenger tilgang." : "Noe gikk galt. Prøv igjen.";
     console.error("things-api", raw);
     return json({ error: publicMessage }, 400, origin);
   }
