@@ -31,7 +31,7 @@ export function onAuthSessionChanged(callback: (session: AuthSession | null) => 
   return () => data.subscription.unsubscribe();
 }
 
-export async function sendMagicLink(email: string): Promise<void> {
+export async function sendSignInCode(email: string): Promise<void> {
   if (!authClient) throw new Error("Supabase Auth er ikke konfigurert.");
   const emailRedirectTo = new URL(import.meta.env.BASE_URL, location.origin).toString();
   const { error } = await authClient.auth.signInWithOtp({
@@ -39,6 +39,18 @@ export async function sendMagicLink(email: string): Promise<void> {
     options: { emailRedirectTo, shouldCreateUser: true },
   });
   if (error) throw error;
+}
+
+export async function verifySignInCode(email: string, token: string): Promise<AuthSession> {
+  if (!authClient) throw new Error("Supabase Auth er ikke konfigurert.");
+  const { data, error } = await authClient.auth.verifyOtp({
+    email,
+    token,
+    type: "email",
+  });
+  if (error) throw error;
+  if (!data.session) throw new Error("Koden kunne ikke bekreftes. Be om en ny kode.");
+  return data.session;
 }
 
 export async function signOut(): Promise<void> {

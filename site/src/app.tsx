@@ -19,14 +19,16 @@ import {
   isRemoteConfigured,
   joinRemoteHome,
   leaveRemoteHome,
+  removeRemoteMember,
   syncRemote,
 } from "./lib/api";
 import {
   isAuthConfigured,
   loadAuthSession,
   onAuthSessionChanged,
-  sendMagicLink,
+  sendSignInCode,
   signOut,
+  verifySignInCode,
   type AuthSession,
 } from "./lib/auth";
 import { clearSnapshot, loadSnapshot, saveSnapshot } from "./storage/indexed-db";
@@ -113,6 +115,7 @@ function EmptyState({ title, text }: { title: string; text: string }) {
 function EmailSignIn({ title, text }: { title: string; text: string }) {
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
+  const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -122,19 +125,36 @@ function EmailSignIn({ title, text }: { title: string; text: string }) {
     if (!normalizedEmail) return setError("Skriv e-postadressen din.");
     setBusy(true); setError("");
     try {
-      await sendMagicLink(normalizedEmail);
+      await sendSignInCode(normalizedEmail);
       setSent(true);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Kunne ikke sende innloggingslenken."); }
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Kunne ikke sende innloggingskoden."); }
+    finally { setBusy(false); }
+  }
+
+  async function verify(event: Event) {
+    event.preventDefault();
+    const normalizedCode = code.replace(/\s/g, "");
+    if (!normalizedCode) return setError("Skriv inn koden fra e-posten.");
+    setBusy(true); setError("");
+    try {
+      await verifySignInCode(email.trim().toLowerCase(), normalizedCode);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Koden kunne ikke bekreftes."); }
     finally { setBusy(false); }
   }
 
   return <div class="auth-panel">
     <div><p class="eyebrow">Things-konto</p><h2>{title}</h2><p>{text}</p></div>
-    {sent ? <div class="auth-sent" role="status"><strong>Sjekk e-posten din</strong><p>Åpne lenken på denne telefonen. Du kommer tilbake til Things automatisk.</p><button class="secondary-button" onClick={() => setSent(false)}>Bruk en annen e-post</button></div> :
+    {sent ? <form class="onboarding-form auth-code-form" onSubmit={verify}>
+      <div class="auth-sent" role="status"><strong>Sjekk e-posten din</strong><p>Skriv inn engangskoden her i Things. Du trenger ikke åpne e-postlenken i nettleseren.</p></div>
+      <label>Engangskode<input autofocus value={code} onInput={(event) => setCode(event.currentTarget.value)} inputMode="numeric" autocomplete="one-time-code" maxlength={10} placeholder="123456" /></label>
+      {error && <p class="form-error" role="alert">{error}</p>}
+      <button class="primary-button" disabled={busy}>{busy ? "Bekrefter …" : "Bekreft kode"}</button>
+      <button type="button" class="secondary-button" onClick={() => { setSent(false); setCode(""); setError(""); }}>Bruk en annen e-post</button>
+    </form> :
       <form class="onboarding-form" onSubmit={submit}>
         <label>E-post<input type="email" inputMode="email" autocomplete="email" value={email} onInput={(event) => setEmail(event.currentTarget.value)} placeholder="deg@eksempel.no" /></label>
         {error && <p class="form-error" role="alert">{error}</p>}
-        <button class="primary-button" disabled={busy}>{busy ? "Sender …" : "Send innloggingslenke"}</button>
+        <button class="primary-button" disabled={busy}>{busy ? "Sender …" : "Send engangskode"}</button>
       </form>}
   </div>;
 }
@@ -225,7 +245,7 @@ function Onboarding({ onReady, session, authLoaded }: { onReady(snapshot: AppSna
   if (isRemoteConfigured && (!authLoaded || !session)) return (
     <main class="onboarding form-screen">
       <button class="text-back" onClick={() => { localStorage.removeItem(PENDING_MODE_KEY); setMode("welcome"); }}>Tilbake</button>
-      {!authLoaded ? <div class="auth-loading">Klargjør sikker innlogging …</div> : <EmailSignIn title={mode === "create" ? "Logg inn før du oppretter hjemmet" : "Logg inn før du blir med"} text="Du bruker en sikker lenke på e-post og trenger ikke passord." />}
+      {!authLoaded ? <div class="auth-loading">Klargjør sikker innlogging …</div> : <EmailSignIn title={mode === "create" ? "Logg inn før du oppretter hjemmet" : "Logg inn før du blir med"} text="Du får en engangskode på e-post og trenger ikke passord." />}
     </main>
   );
 
@@ -364,7 +384,13 @@ export function App() {
         syncCursor: Math.max(latest.syncCursor, result.cursor),
       }));
       setSyncState("ready");
-    } catch { setSyncState("error"); }
+    } catch (cause) {
+      if (cause instanceof Error && cause.message.includes("ikke lenger tilgang")) {
+        await resetLocal();
+        return;
+      }
+      setSyncState("error");
+    }
     finally { syncingRef.current = false; }
   }
 
@@ -462,6 +488,13 @@ export function App() {
     setAccountState("idle");
   }
 
+  async function removeMember(memberId: string) {
+    const identity = snapshotRef.current.identity;
+    if (!identity) return;
+    const result = await removeRemoteMember(identity, memberId);
+    commit((current) => ({ ...current, members: result.members }));
+  }
+
   if (!loaded) return <div class="loading-screen"><div class="wordmark">Things</div></div>;
   if (!snapshot.identity) return <Onboarding onReady={initialize} session={authSession} authLoaded={authLoaded} />;
 
@@ -534,7 +567,7 @@ export function App() {
 
       {deletedItem && <div class="undo-toast" role="status"><span>«{deletedItem.name}» er slettet</span><button onClick={undoDelete}>Angre</button></div>}
       {selectedItem && <ItemSheet item={selectedItem} members={snapshot.members} onClose={() => setSelectedItemId(null)} onDelete={() => deleteItem(selectedItem)} onChange={(changes) => { updateItem(selectedItem, changes); if (changes.status) setSelectedItemId(null); }} />}
-      {showHome && <HomeSheet identity={snapshot.identity} members={snapshot.members} syncState={syncState} online={online} installPrompt={installPrompt} authSession={authSession} accountState={accountState} accountError={accountError} onSecureAccount={() => setShowAuth(true)} onRetryAccount={() => void linkCurrentAccount()} onSignOut={() => void logOutAccount()} onClose={() => setShowHome(false)} onSynced={() => void syncNow()} onLeave={async () => { if (isRemoteConfigured) await leaveRemoteHome(snapshot.identity!); await resetLocal(); }} onDelete={async () => { if (isRemoteConfigured) await deleteRemoteHome(snapshot.identity!); await resetLocal(); }} />}
+      {showHome && <HomeSheet identity={snapshot.identity} members={snapshot.members} syncState={syncState} online={online} installPrompt={installPrompt} authSession={authSession} accountState={accountState} accountError={accountError} onSecureAccount={() => setShowAuth(true)} onRetryAccount={() => void linkCurrentAccount()} onSignOut={() => void logOutAccount()} onClose={() => setShowHome(false)} onSynced={() => void syncNow()} onRemoveMember={removeMember} onLeave={async () => { if (isRemoteConfigured) await leaveRemoteHome(snapshot.identity!); await resetLocal(); }} onDelete={async () => { if (isRemoteConfigured) await deleteRemoteHome(snapshot.identity!); await resetLocal(); }} />}
       {showAuth && <Sheet title="Sikre kontoen" onClose={() => setShowAuth(false)}><EmailSignIn title="Koble hjemmet til e-posten din" text="Etter innlogging kan dette medlemskapet knyttes til kontoen din uten at varer eller historikk forsvinner." /><button class="sheet-close" onClick={() => setShowAuth(false)}>Lukk</button></Sheet>}
     </div>
   );
@@ -565,13 +598,17 @@ function ItemSheet({ item, members, onClose, onChange, onDelete }: { item: Item;
   </Sheet>;
 }
 
-function HomeSheet({ identity, members, syncState, online, installPrompt, authSession, accountState, accountError, onSecureAccount, onRetryAccount, onSignOut, onClose, onSynced, onLeave, onDelete }: { identity: Identity; members: Member[]; syncState: SyncState; online: boolean; installPrompt: InstallPromptEvent | null; authSession: AuthSession | null; accountState: "idle" | "linking" | "linked" | "error"; accountError: string; onSecureAccount(): void; onRetryAccount(): void; onSignOut(): void; onClose(): void; onSynced(): void; onLeave(): Promise<void>; onDelete(): Promise<void> }) {
+function HomeSheet({ identity, members, syncState, online, installPrompt, authSession, accountState, accountError, onSecureAccount, onRetryAccount, onSignOut, onClose, onSynced, onRemoveMember, onLeave, onDelete }: { identity: Identity; members: Member[]; syncState: SyncState; online: boolean; installPrompt: InstallPromptEvent | null; authSession: AuthSession | null; accountState: "idle" | "linking" | "linked" | "error"; accountError: string; onSecureAccount(): void; onRetryAccount(): void; onSignOut(): void; onClose(): void; onSynced(): void; onRemoveMember(memberId: string): Promise<void>; onLeave(): Promise<void>; onDelete(): Promise<void> }) {
   const [shareLink, setShareLink] = useState("");
   const [message, setMessage] = useState("");
   const [deleteText, setDeleteText] = useState("");
   const [showDanger, setShowDanger] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [memberToRemove, setMemberToRemove] = useState<Member | null>(null);
+  const [memberError, setMemberError] = useState("");
+  const currentMember = members.find((member) => member.id === identity.memberId);
+  const isOwner = identity.role === "owner" || currentMember?.role === "owner";
 
   async function makeLink(kind: "invite" | "transfer") {
     setBusy(true); setMessage("");
@@ -599,10 +636,21 @@ function HomeSheet({ identity, members, syncState, online, installPrompt, authSe
     await copyLink();
   }
 
+  async function confirmMemberRemoval() {
+    if (!memberToRemove) return;
+    setBusy(true); setMemberError("");
+    try {
+      await onRemoveMember(memberToRemove.id);
+      setMemberToRemove(null);
+    } catch (cause) { setMemberError(cause instanceof Error ? cause.message : "Kunne ikke fjerne medlemmet."); }
+    finally { setBusy(false); }
+  }
+
   return <Sheet title="Hjem" onClose={onClose} className="home-sheet">
     <div class="settings-group"><h3>Konto</h3>{authSession ? <><div class="settings-row account-row"><span>{authSession.user.email ?? "Innlogget konto"}</span><small>{identity.accountLinked || accountState === "linked" ? "Sikret" : accountState === "linking" ? "Kobler …" : "Ikke koblet"}</small></div>{accountState === "error" && <button class="settings-action" onClick={onRetryAccount}><span>Prøv å koble kontoen igjen</span><small>Prøv igjen</small></button>}<button class="settings-action" onClick={onSignOut}><span>Logg ut av kontoen</span><small>Hjemmet beholdes lokalt nå</small></button></> : <button class="settings-action invite-action" onClick={onSecureAccount}><span><strong>{identity.accountLinked ? "Logg inn på kontoen" : "Sikre kontoen"}</strong><small>Bruk e-post – uten passord</small></span><Icon name="person" /></button>}</div>
     {accountError && <p class="form-error settings-message">{accountError}</p>}
-    <div class="settings-group"><h3>Medlemmer</h3>{members.map((member) => <div class="settings-row"><span>{member.displayName}</span><small>{member.id === identity.memberId ? "Deg" : member.role === "owner" ? "Eier" : ""}</small></div>)}{members.length < MAX_MEMBERS && <button class="settings-action invite-action" disabled={busy || !isRemoteConfigured} onClick={() => void makeLink("invite")}><span><strong>{busy ? "Lager invitasjon …" : "Inviter en person"}</strong><small>Lenken kan brukes én gang</small></span><Icon name="person" /></button>}</div>
+    <div class="settings-group"><h3>Medlemmer</h3>{members.map((member) => <div class="settings-row member-row"><span>{member.displayName}</span>{isOwner && member.id !== identity.memberId ? <button class="member-remove" disabled={busy} onClick={() => { setMemberError(""); setMemberToRemove(member); }}>Fjern</button> : <small>{member.id === identity.memberId ? (member.role === "owner" ? "Deg · Eier" : "Deg") : member.role === "owner" ? "Eier" : ""}</small>}</div>)}{members.length < MAX_MEMBERS && <button class="settings-action invite-action" disabled={busy || !isRemoteConfigured} onClick={() => void makeLink("invite")}><span><strong>{busy ? "Lager invitasjon …" : "Inviter en person"}</strong><small>Lenken kan brukes én gang</small></span><Icon name="person" /></button>}</div>
+    {memberToRemove && <div class="member-confirm" role="alertdialog" aria-label={`Fjern ${memberToRemove.displayName}`}><p><strong>Fjern {memberToRemove.displayName}?</strong></p><p>Personens telefoner mister tilgangen til hjemmet.</p>{memberError && <p class="form-error">{memberError}</p>}<div><button class="secondary-button" disabled={busy} onClick={() => setMemberToRemove(null)}>Avbryt</button><button class="danger-button" disabled={busy} onClick={() => void confirmMemberRemoval()}>{busy ? "Fjerner …" : "Fjern medlem"}</button></div></div>}
     {shareLink && <div class="share-card"><p class="share-intro">Send lenken til personen du vil dele hjemmet med.</p><input readonly value={shareLink} aria-label="Delbar lenke" /><div class="share-actions"><button class="share-primary" onClick={() => void shareInvite()}>Del invitasjon</button><button class="share-secondary" onClick={() => void copyLink()}>Kopier lenke</button></div><p>{message}</p></div>}
     {!shareLink && message && <p class="form-error settings-message">{message}</p>}
     <div class="settings-group"><h3>Things</h3><button class="settings-action" onClick={onSynced}><span>Synkstatus</span><small>{!isRemoteConfigured ? "Lokal modus" : !online ? "Frakoblet" : syncState === "syncing" ? "Synkroniserer …" : syncState === "error" ? "Feil – prøv igjen" : "Oppdatert"}</small></button><button class="settings-action" disabled={busy || !isRemoteConfigured} onClick={() => void makeLink("transfer")}>Overfør til ny telefon</button><button class="settings-action" onClick={() => installPrompt ? void installPrompt.prompt() : setMessage("Bruk «Legg til på Hjem-skjerm» i nettlesermenyen.")}>Installer Things</button><button class="settings-action" onClick={() => setShowPrivacy(true)}>Personvern</button></div>

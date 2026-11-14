@@ -14,6 +14,10 @@ enhetsnøkler beholdes midlertidig slik at dagens hjem kan migreres uten datatap
    `supabase secrets set THINGS_ALLOWED_ORIGIN=https://br0hansen.github.io`
 5. Sett Auth Site URL til `https://br0hansen.github.io/things/` og tillat samme
    redirect-URL samt `http://127.0.0.1:5173/things/` for lokal utvikling.
+   Innlogging skjer med engangskode, fordi en installert iOS-app og Safari
+   ikke deler innloggingsøkt. Under Authentication → Email Templates må både
+   «Magic Link» og «Confirm signup» inneholde koden, for eksempel:
+   `<p>Koden din er <strong>{{ .Token }}</strong></p>`.
 6. Publiser funksjonen:
    `supabase functions deploy things-api --no-verify-jwt`
 7. Legg prosjektets URL og anon/publishable key i `site/.env.local`, basert på

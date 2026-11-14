@@ -61,6 +61,10 @@ export async function claimRemoteAccount(identity: Identity): Promise<{ identity
   return callApi("claim_account", {}, { deviceToken: identity.deviceToken });
 }
 
+export async function removeRemoteMember(identity: Identity, memberId: string): Promise<{ members: Member[] }> {
+  return callApi("remove_member", { memberId }, { deviceToken: identity.deviceToken });
+}
+
 export async function leaveRemoteHome(identity: Identity): Promise<void> {
   await callApi("leave_home", {}, { deviceToken: identity.deviceToken });
 }

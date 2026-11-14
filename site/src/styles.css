@@ -205,6 +205,13 @@ input { width: 100%; min-height: 52px; border: 1px solid var(--line); border-rad
 .settings-row, .settings-action { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 54px; border: 0; border-bottom: 1px solid var(--line); padding: 0 14px; background: var(--background); font-size: 16px; text-align: left; }
 .settings-row:last-child, .settings-action:last-child { border-bottom: 0; }.settings-action { cursor: pointer; }
 .settings-row small, .settings-action small { color: var(--muted); font-size: 14px; }
+.member-row > span { min-width: 0; overflow: hidden; padding-right: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.member-remove { min-height: 44px; flex: none; border: 0; padding: 0 2px 0 14px; color: var(--empty-ink); background: transparent; font-size: 14px; font-weight: 650; cursor: pointer; }
+.member-confirm { display: grid; gap: 8px; margin: -14px 0 22px; border-radius: 12px; padding: 14px; background: var(--background); }
+.member-confirm p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.4; }
+.member-confirm p strong { color: var(--text); font-size: 16px; }
+.member-confirm > div { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px; }
+.member-confirm button { min-height: 48px; }
 .account-row span { overflow: hidden; padding-right: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .invite-action > span { align-items: start; }
 .invite-action svg { flex: none; }

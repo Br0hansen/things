@@ -177,6 +177,12 @@ Deno.serve(async (request) => {
       return json({ items: (data ?? []).map(mapItem), members: await membersFor(device.home_id), cursor: nextCursor, acceptedMutationIds }, 200, origin);
     }
 
+    if (action === "remove_member") {
+      const { error } = await db.rpc("things_remove_member", { p_device_id: device.id, p_member_id: String(body.memberId ?? "") });
+      if (error) throw error;
+      return json({ members: await membersFor(device.home_id) }, 200, origin);
+    }
+
     if (action === "leave_home") {
       const { error } = await db.rpc("things_leave_home", { p_device_id: device.id });
       if (error) throw error;
@@ -193,7 +199,7 @@ Deno.serve(async (request) => {
     return json({ error: "unknown_action" }, 400, origin);
   } catch (cause) {
     const raw = cause instanceof Error ? cause.message : String((cause as { message?: unknown })?.message ?? "unknown_error");
-    const publicMessage = raw.includes("invite_invalid") ? "Invitasjonen er brukt eller utløpt." : raw.includes("transfer_invalid") ? "Overføringslenken er brukt eller utløpt." : raw.includes("home_full") ? "Hjemmet er fullt." : raw.includes("device_invalid") ? "Denne telefonen har ikke lenger tilgang." : raw.includes("auth_required") ? "Logg inn for å fortsette." : raw.includes("member_already_claimed") ? "Dette medlemskapet er allerede koblet til en annen konto." : raw.includes("already_member") ? "Denne kontoen er allerede medlem av hjemmet." : "Noe gikk galt. Prøv igjen.";
+    const publicMessage = raw.includes("invite_invalid") ? "Invitasjonen er brukt eller utløpt." : raw.includes("transfer_invalid") ? "Overføringslenken er brukt eller utløpt." : raw.includes("home_full") ? "Hjemmet er fullt." : raw.includes("device_invalid") ? "Denne telefonen har ikke lenger tilgang." : raw.includes("auth_required") ? "Logg inn for å fortsette." : raw.includes("member_already_claimed") ? "Dette medlemskapet er allerede koblet til en annen konto." : raw.includes("already_member") ? "Denne kontoen er allerede medlem av hjemmet." : raw.includes("not_owner") ? "Bare eieren kan fjerne medlemmer." : raw.includes("cannot_remove_self") ? "Du kan ikke fjerne deg selv." : raw.includes("member_not_found") ? "Medlemmet er allerede fjernet." : "Noe gikk galt. Prøv igjen.";
     console.error("things-api", raw);
     return json({ error: publicMessage }, 400, origin);
   }
