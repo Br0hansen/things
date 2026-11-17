@@ -66,6 +66,15 @@ export function normalizeEan(raw: string): string | null {
   return digits.length === 8 || digits.length === 13 || digits.length === 14 ? digits : null;
 }
 
+/** GS1 check digit for EAN-8, EAN-13 and GTIN-14. UPC-E fails this and needs a second read. */
+export function hasValidCheckDigit(ean: string): boolean {
+  if (!/^\d{8,14}$/.test(ean)) return false;
+  const digits = [...ean].map(Number);
+  const check = digits.pop()!;
+  const sum = digits.reverse().reduce((total, digit, index) => total + digit * (index % 2 === 0 ? 3 : 1), 0);
+  return (10 - (sum % 10)) % 10 === check;
+}
+
 export function findItemByEan(items: Item[], ean: string): Item | undefined {
   return items.find((item) => !item.deletedAt && (item.eans ?? []).includes(ean));
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addEan, createItem, findItemByEan, isIncomingNewer, mergeItems, mutateItem, normalizeEan, normalizeItemName } from "./domain";
+import { addEan, createItem, findItemByEan, hasValidCheckDigit, isIncomingNewer, mergeItems, mutateItem, normalizeEan, normalizeItemName } from "./domain";
 import type { Item } from "../types";
 
 const base: Item = {
@@ -41,6 +41,19 @@ describe("last-write-wins", () => {
   });
 });
 
+
+describe("hasValidCheckDigit", () => {
+  it("godtar gyldige EAN-13, EAN-8 og UPC-A gjort om til EAN-13", () => {
+    expect(hasValidCheckDigit("4006381333931")).toBe(true);
+    expect(hasValidCheckDigit("96385074")).toBe(true);
+    expect(hasValidCheckDigit("0036000291452")).toBe(true);
+  });
+
+  it("avviser feil kontrollsiffer og feil lengde", () => {
+    expect(hasValidCheckDigit("4006381333932")).toBe(false);
+    expect(hasValidCheckDigit("1234567")).toBe(false);
+  });
+});
 
 describe("normalizeEan", () => {
   it("godtar EAN-8, EAN-13 og GTIN-14", () => {
