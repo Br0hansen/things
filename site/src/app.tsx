@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { ComponentChildren, JSX } from "preact";
 import {
+  addEan,
   cleanDisplayName,
   createItem,
+  findItemByEan,
   formatRelativeTime,
   itemToMutation,
   mergeItems,
@@ -19,8 +21,11 @@ import {
   isRemoteConfigured,
   joinRemoteHome,
   leaveRemoteHome,
+  lookupEan,
   removeRemoteMember,
+  saveProduct,
   syncRemote,
+  type ProductLookup,
 } from "./lib/api";
 import {
   isAuthConfigured,
@@ -31,11 +36,14 @@ import {
   verifySignInCode,
   type AuthSession,
 } from "./lib/auth";
+import { Scanner } from "./scanner";
 import { clearSnapshot, loadSnapshot, saveSnapshot } from "./storage/indexed-db";
 import { EMPTY_SNAPSHOT, type AppSnapshot, type Identity, type Item, type ItemStatus, type Member } from "./types";
 
 type Tab = "cabinet" | "shop";
 type SyncState = "ready" | "syncing" | "waiting" | "error";
+/** lookup is null while the server lookup is running. */
+interface ScannedCode { ean: string; lookup: { name: string; note: string; fromProduct: boolean } | null }
 
 interface InstallPromptEvent extends Event {
   prompt(): Promise<void>;
@@ -66,7 +74,7 @@ function saveStatusFilters(homeId: string, filters: ItemStatus[]) {
   catch { /* Filtreringen virker fortsatt i denne appøkten. */ }
 }
 
-function Icon({ name }: { name: "cabinet" | "cart" | "search" | "close" | "check" | "wifi" | "person" | "house" | "trash" | "pencil" }) {
+function Icon({ name }: { name: "cabinet" | "cart" | "search" | "close" | "check" | "wifi" | "person" | "house" | "trash" | "pencil" | "barcode" }) {
   const common = { width: 22, height: 22, viewBox: "0 0 24 24", fill: "none", "aria-hidden": true } as const;
   if (name === "cabinet") return <svg {...common}><path d="M5 3.75h14v16.5H5zM12 3.75v16.5M9.2 11.5h.1M14.7 11.5h.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>;
   if (name === "cart") return <svg {...common}><path d="M3.5 5h2l1.8 9.2h10.8l2-6.3H6.1M9 19a1 1 0 1 0 0-2 1 1 0 0 0 0 2ZM17 19a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>;
@@ -76,6 +84,7 @@ function Icon({ name }: { name: "cabinet" | "cart" | "search" | "close" | "check
   if (name === "person") return <svg {...common}><circle cx="9" cy="8" r="3.25" stroke="currentColor" stroke-width="1.8" /><path d="M3.75 18.5c.45-3.25 2.2-5 5.25-5s4.8 1.75 5.25 5M17.5 8.5v6M14.5 11.5h6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>;
   if (name === "house") return <svg {...common}><path d="M4 10.5 12 4l8 6.5M6.25 9v10.25h11.5V9M10 19.25v-5h4v5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>;
   if (name === "trash") return <svg {...common}><path d="M4.5 7h15M9.5 7V4.75h5V7M6.5 7l.9 12.25h9.2L17.5 7M10 11v5M14 11v5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" /></svg>;
+  if (name === "barcode") return <svg {...common}><path d="M3.75 8V5.75a2 2 0 0 1 2-2H8M16 3.75h2.25a2 2 0 0 1 2 2V8M20.25 16v2.25a2 2 0 0 1-2 2H16M8 20.25H5.75a2 2 0 0 1-2-2V16M7.5 8v8M10.5 8v8M13.5 8v8M16.5 8v8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>;
   if (name === "pencil") return <svg {...common}><path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3ZM13.5 7.5l3 3" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" /></svg>;
   return <svg {...common}><path d="m6.5 12.5 3.2 3.2 7.8-8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>;
 }
@@ -287,6 +296,9 @@ export function App() {
   const [syncState, setSyncState] = useState<SyncState>("ready");
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
   const [deletedItem, setDeletedItem] = useState<Item | null>(null);
+  const [showScanner, setShowScanner] = useState(false);
+  const [scanned, setScanned] = useState<ScannedCode | null>(null);
+  const scannedRef = useRef<string | null>(null);
   const undoTimer = useRef<number | null>(null);
   const syncTimer = useRef<number | null>(null);
   const syncingRef = useRef(false);
@@ -437,7 +449,7 @@ export function App() {
     setQuery(""); navigator.vibrate?.(10); scheduleSync();
   }
 
-  function updateItem(item: Item, changes: Partial<Pick<Item, "name" | "status" | "deletedAt">>) {
+  function updateItem(item: Item, changes: Partial<Pick<Item, "name" | "status" | "deletedAt" | "eans">>) {
     if (!snapshot.identity) return;
     const result = mutateItem(item, snapshot.identity.memberId, changes);
     commit((current) => ({
@@ -446,6 +458,52 @@ export function App() {
       outbox: [...current.outbox, result.mutation],
     }));
     navigator.vibrate?.(10); scheduleSync();
+  }
+
+  async function handleScan(ean: string) {
+    setShowScanner(false);
+    const local = findItemByEan(snapshotRef.current.items, ean);
+    if (local) { setSelectedItemId(local.id); return; }
+    scannedRef.current = ean;
+    setScanned({ ean, lookup: null });
+    const identity = snapshotRef.current.identity;
+    let lookup: ScannedCode["lookup"];
+    if (!isRemoteConfigured || !identity) lookup = { name: "", note: "Fant ikke varen. Skriv navnet selv.", fromProduct: false };
+    else if (!navigator.onLine) lookup = { name: "", note: "Uten nett. Skriv navnet selv.", fromProduct: false };
+    else {
+      let result: ProductLookup | null = null;
+      try { result = await lookupEan(identity, ean); } catch { /* Same as no hit. */ }
+      lookup = result?.product
+        ? { name: cleanDisplayName(result.product.name), note: "", fromProduct: true }
+        : { name: "", note: result?.rateLimited ? "Mange oppslag akkurat nå. Skriv navnet selv." : "Fant ikke varen. Skriv navnet selv.", fromProduct: false };
+    }
+    if (scannedRef.current === ean) setScanned({ ean, lookup });
+  }
+
+  function closeScanned() { scannedRef.current = null; setScanned(null); }
+
+  /** Adds the scanned code to an existing item, or to a new one, then opens it so status can be set. */
+  function finishScan(target: Item | string) {
+    const identity = snapshotRef.current.identity;
+    if (!identity || !scanned) return;
+    const { ean, lookup } = scanned;
+    let itemId: string;
+    if (typeof target === "string") {
+      const item = createItem(identity.homeId, identity.memberId, target, "empty", [ean]);
+      commit((current) => ({ ...current, items: [...current.items, item], outbox: [...current.outbox, itemToMutation(item)] }));
+      navigator.vibrate?.(10); scheduleSync();
+      itemId = item.id;
+    } else {
+      const fresh = snapshotRef.current.items.find((item) => item.id === target.id) ?? target;
+      updateItem(fresh, { eans: addEan(fresh, ean) });
+      itemId = target.id;
+    }
+    const typedName = typeof target === "string" ? target : "";
+    if (typedName && lookup && !lookup.fromProduct && isRemoteConfigured && navigator.onLine) {
+      void saveProduct(identity, ean, cleanDisplayName(typedName)).catch(() => undefined);
+    }
+    closeScanned();
+    setSelectedItemId(itemId);
   }
 
   function checkItem(item: Item) {
@@ -553,11 +611,14 @@ export function App() {
 
       <div class={`bottom-dock ${tab === "shop" ? "without-search" : ""}`}>
         {tab === "cabinet" && (
-          <form class="quick-entry" onSubmit={submitQuickEntry}>
-            <Icon name="search" />
-            <input aria-label="Finn eller legg til vare" value={query} onInput={(event) => setQuery(event.currentTarget.value)} placeholder="Finn eller legg til vare" enterKeyHint="done" />
-            {query && !exactMatch && <button type="submit">Legg til</button>}
-          </form>
+          <div class="dock-row">
+            <form class="quick-entry" onSubmit={submitQuickEntry}>
+              <Icon name="search" />
+              <input aria-label="Finn eller legg til vare" value={query} onInput={(event) => setQuery(event.currentTarget.value)} placeholder="Finn eller legg til vare" enterKeyHint="done" />
+              {query && !exactMatch && <button type="submit">Legg til</button>}
+            </form>
+            <button class="scan-button" onClick={() => setShowScanner(true)}><Icon name="barcode" /><span>Skann</span></button>
+          </div>
         )}
         <nav class="tab-bar" aria-label="Hovednavigasjon">
           <button class={tab === "cabinet" ? "active" : ""} onClick={() => setTab("cabinet")}><Icon name="cabinet" /><span>Skapet</span></button>
@@ -567,6 +628,8 @@ export function App() {
 
       {deletedItem && <div class="undo-toast" role="status"><span>«{deletedItem.name}» er slettet</span><button onClick={undoDelete}>Angre</button></div>}
       {selectedItem && <ItemSheet item={selectedItem} members={snapshot.members} onClose={() => setSelectedItemId(null)} onDelete={() => deleteItem(selectedItem)} onChange={(changes) => { updateItem(selectedItem, changes); if (changes.status) setSelectedItemId(null); }} />}
+      {showScanner && <Sheet title="Skann strekkode" onClose={() => setShowScanner(false)}><Scanner onDetected={(ean) => void handleScan(ean)} /><button class="sheet-close" onClick={() => setShowScanner(false)}>Lukk</button></Sheet>}
+      {scanned && <NewCodeSheet key={scanned.ean} scanned={scanned} items={activeItems} onLink={finishScan} onCreate={finishScan} onClose={closeScanned} />}
       {showHome && <HomeSheet identity={snapshot.identity} members={snapshot.members} syncState={syncState} online={online} installPrompt={installPrompt} authSession={authSession} accountState={accountState} accountError={accountError} onSecureAccount={() => setShowAuth(true)} onRetryAccount={() => void linkCurrentAccount()} onSignOut={() => void logOutAccount()} onClose={() => setShowHome(false)} onSynced={() => void syncNow()} onRemoveMember={removeMember} onLeave={async () => { if (isRemoteConfigured) await leaveRemoteHome(snapshot.identity!); await resetLocal(); }} onDelete={async () => { if (isRemoteConfigured) await deleteRemoteHome(snapshot.identity!); await resetLocal(); }} />}
       {showAuth && <Sheet title="Sikre kontoen" onClose={() => setShowAuth(false)}><EmailSignIn title="Koble hjemmet til e-posten din" text="Etter innlogging kan dette medlemskapet knyttes til kontoen din uten at varer eller historikk forsvinner." /><button class="sheet-close" onClick={() => setShowAuth(false)}>Lukk</button></Sheet>}
     </div>
@@ -595,6 +658,37 @@ function ItemSheet({ item, members, onClose, onChange, onDelete }: { item: Item;
       <form class="form-group" onSubmit={(event) => { event.preventDefault(); if (!normalizeItemName(name)) return; onChange({ name: cleanDisplayName(name) }); setEditing(false); }}><label>Varenavn<input value={name} onInput={(event) => setName(event.currentTarget.value)} maxlength={60} enterKeyHint="done" /></label><button class="primary-button compact" disabled={!normalizeItemName(name)}>Lagre navn</button></form>
       <button class="sheet-close" onClick={() => setEditing(false)}>Tilbake</button>
     </>}
+  </Sheet>;
+}
+
+function NewCodeSheet({ scanned, items, onLink, onCreate, onClose }: { scanned: ScannedCode; items: Item[]; onLink(item: Item): void; onCreate(name: string): void; onClose(): void }) {
+  const [name, setName] = useState("");
+  const [typed, setTyped] = useState(false);
+  useEffect(() => { if (scanned.lookup && !typed) setName(scanned.lookup.name); }, [scanned.lookup]);
+  const needle = normalizeItemName(name);
+  const sameName = needle ? items.find((item) => item.normalizedName === needle) : undefined;
+  // Match both ways, so "Tine Lettmelk 1 %" finds "Melk". Show every item when nothing matches.
+  const matches = needle ? items.filter((item) => item.normalizedName.includes(needle) || needle.includes(item.normalizedName)) : items;
+  const linkable = matches.length > 0 ? matches : items;
+
+  function submit(event: Event) {
+    event.preventDefault();
+    if (sameName) onLink(sameName);
+    else if (needle) onCreate(cleanDisplayName(name));
+  }
+
+  return <Sheet title="Ny strekkode" onClose={onClose}>
+    <p class="sheet-question" role="status">{!scanned.lookup ? "Slår opp strekkoden …" : scanned.lookup.note || "Gi varen navnet dere bruker."}</p>
+    <form class="form-group" onSubmit={submit}>
+      <label>Varenavn<input value={name} onInput={(event) => { setTyped(true); setName(event.currentTarget.value); }} maxlength={60} enterKeyHint="done" placeholder="F.eks. Melk" /></label>
+      <button class="primary-button" disabled={!needle}>{sameName ? `Koble til «${sameName.name}»` : "Legg til som ny vare"}</button>
+    </form>
+    {items.length > 0 && <>
+      <h3 class="sheet-subheading">Eller koble til en vare dere har</h3>
+      <div class="edge-list sheet-list">{linkable.map((item) => <button class="item-row" key={item.id} onClick={() => onLink(item)}><span class="item-name">{item.name}</span><span class="row-action">Koble til</span></button>)}</div>
+    </>}
+    <p class="scanned-code">Strekkode {scanned.ean}</p>
+    <button class="sheet-close" onClick={onClose}>Lukk</button>
   </Sheet>;
 }
 

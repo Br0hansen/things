@@ -26,6 +26,10 @@ og Edge Function-en ligger i [`supabase/functions/things-api`](supabase/function
 2. Kjør `supabase db push` fra repoets rot. Migrasjon `003` legger til det
    bakoverkompatible Auth-grunnlaget uten å fjerne eksisterende enhetsnøkler.
 3. Sett `THINGS_ALLOWED_ORIGIN=https://br0hansen.github.io` som Supabase-secret.
+   For strekkodeoppslag setter du også
+   `supabase secrets set KASSAL_API_KEY=<nøkkel fra kassal.app/profil/api>`.
+   Kassal kalles høyst 5 ganger per minutt totalt for alle brukere. Treff lagres i
+   den delte produktdatabasen `things_products` og slås ikke opp hos Kassal igjen.
 4. Kjør `supabase functions deploy things-api --no-verify-jwt`. JWT-verifisering
    gjøres inne i funksjonen i hybridperioden, fordi gamle enheter fortsatt må virke.
 5. Under **Authentication → URL Configuration** setter du Site URL til

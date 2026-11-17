@@ -66,6 +66,7 @@ function mapItem(row: Record<string, unknown>) {
     id: row.id, homeId: row.home_id, name: row.name, normalizedName: row.normalized_name,
     status: row.status, changedAt: row.changed_at, changedBy: row.changed_by,
     mutationId: row.mutation_id, deletedAt: row.deleted_at, syncSeq: row.sync_seq,
+    eans: row.eans ?? [],
   };
 }
 
@@ -88,6 +89,55 @@ async function membersFor(homeId: string) {
 async function track(eventName: string, metadata: Record<string, boolean | number | string> = {}) {
   const safe = Object.fromEntries(Object.entries(metadata).filter(([, value]) => typeof value === "boolean" || typeof value === "number" || (typeof value === "string" && value.length < 24)));
   await db.from("things_events").insert({ event_name: eventName, metadata: safe });
+}
+
+const EAN_PATTERN = /^\d{8,14}$/;
+
+function cleanText(value: unknown) {
+  return typeof value === "string" ? value.trim().replace(/\s+/g, " ") : "";
+}
+
+// Only real Kassal HTTP calls take a slot from the shared limit of 5 per minute.
+async function lookupKassal(ean: string): Promise<{ from: string; body: Record<string, unknown> }> {
+  const miss = { from: "miss", body: { product: null } };
+  const limited = { from: "limited", body: { product: null, rateLimited: true } };
+  const unavailable = { from: "unavailable", body: { product: null, unavailable: true } };
+  const key = Deno.env.get("KASSAL_API_KEY") ?? "";
+  if (!key) return unavailable;
+  const { data: slot, error } = await db.rpc("things_take_kassal_slot");
+  if (error) throw error;
+  if (slot !== true) return limited;
+
+  let response: Response;
+  try {
+    response = await fetch("https://kassal.app/api/v1/products/ean/" + ean, {
+      headers: { authorization: "Bearer " + key, accept: "application/json" },
+      signal: AbortSignal.timeout(8000),
+    });
+  } catch (cause) {
+    console.error("things-api kassal", cause instanceof Error ? cause.name : "fetch_failed");
+    return unavailable;
+  }
+  if (response.status === 404) return miss;
+  if (response.status === 429) return limited;
+  if (!response.ok) {
+    console.error("things-api kassal", response.status);
+    return unavailable;
+  }
+
+  const payload = await response.json().catch(() => null);
+  const products = Array.isArray(payload?.data?.products) ? payload.data.products : payload?.data?.name ? [payload.data] : [];
+  const match = products.find((candidate: { name?: unknown } | null) => cleanText(candidate?.name));
+  if (!match) return miss;
+  const product = {
+    ean,
+    name: Array.from(cleanText(match.name)).slice(0, 200).join("").trim(),
+    brand: Array.from(cleanText(match.brand)).slice(0, 200).join("").trim() || null,
+    source: "kassal" as const,
+  };
+  const { error: insertError } = await db.from("things_products").upsert(product, { onConflict: "ean", ignoreDuplicates: true });
+  if (insertError) console.error("things-api products", insertError.message);
+  return { from: "kassal", body: { product, from: "kassal" } };
 }
 
 Deno.serve(async (request) => {
@@ -175,6 +225,30 @@ Deno.serve(async (request) => {
       if (error) throw error;
       const nextCursor = (data ?? []).reduce((max, row) => Math.max(max, Number(row.sync_seq)), cursor);
       return json({ items: (data ?? []).map(mapItem), members: await membersFor(device.home_id), cursor: nextCursor, acceptedMutationIds }, 200, origin);
+    }
+
+    if (action === "lookup_ean") {
+      const ean = String(body.ean ?? "");
+      if (!EAN_PATTERN.test(ean)) return json({ error: "Ugyldig strekkode." }, 400, origin);
+      const { data: product, error } = await db.from("things_products").select("ean,name,brand,source").eq("ean", ean).maybeSingle();
+      if (error) throw error;
+      if (product) {
+        await track("ean_lookup", { from: "db" });
+        return json({ product, from: "db" }, 200, origin);
+      }
+      const result = await lookupKassal(ean);
+      await track("ean_lookup", { from: result.from });
+      return json(result.body, 200, origin);
+    }
+
+    if (action === "save_product") {
+      const ean = String(body.ean ?? "");
+      const name = cleanText(body.name);
+      if (!EAN_PATTERN.test(ean)) return json({ error: "Ugyldig strekkode." }, 400, origin);
+      if (name.length < 1 || name.length > 200) return json({ error: "Ugyldig produktnavn." }, 400, origin);
+      const { error } = await db.from("things_products").upsert({ ean, name, brand: null, source: "manual" }, { onConflict: "ean", ignoreDuplicates: true });
+      if (error) throw error;
+      return json({ ok: true }, 200, origin);
     }
 
     if (action === "remove_member") {

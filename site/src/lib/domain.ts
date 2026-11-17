@@ -13,6 +13,7 @@ export function createItem(
   memberId: string,
   name: string,
   status: ItemStatus = "empty",
+  eans: string[] = [],
 ): Item {
   const now = new Date().toISOString();
   const mutationId = crypto.randomUUID();
@@ -26,13 +27,14 @@ export function createItem(
     changedBy: memberId,
     mutationId,
     deletedAt: null,
+    eans,
   };
 }
 
 export function mutateItem(
   item: Item,
   memberId: string,
-  changes: Partial<Pick<Item, "name" | "status" | "deletedAt">>,
+  changes: Partial<Pick<Item, "name" | "status" | "deletedAt" | "eans">>,
 ): { item: Item; mutation: ItemMutation } {
   const changedAt = new Date().toISOString();
   const mutationId = crypto.randomUUID();
@@ -56,6 +58,23 @@ export function mutateItem(
   };
 }
 
+/** Digits only. UPC-A (12) becomes EAN-13 with a leading zero. */
+export function normalizeEan(raw: string): string | null {
+  const digits = raw.replace(/\s/g, "");
+  if (!/^\d+$/.test(digits)) return null;
+  if (digits.length === 12) return `0${digits}`;
+  return digits.length === 8 || digits.length === 13 || digits.length === 14 ? digits : null;
+}
+
+export function findItemByEan(items: Item[], ean: string): Item | undefined {
+  return items.find((item) => !item.deletedAt && (item.eans ?? []).includes(ean));
+}
+
+export function addEan(item: Item, ean: string): string[] {
+  const eans = item.eans ?? [];
+  return eans.includes(ean) ? eans : [...eans, ean];
+}
+
 export function itemToMutation(item: Item): ItemMutation {
   return {
     id: item.mutationId,
@@ -69,6 +88,8 @@ export function itemToMutation(item: Item): ItemMutation {
 export function isIncomingNewer(incoming: Item, current?: Item): boolean {
   if (!current) return true;
   if (incoming.changedAt !== current.changedAt) return incoming.changedAt > current.changedAt;
+  // The server can merge barcodes into a row without a new mutation; a higher syncSeq carries them.
+  if (incoming.mutationId === current.mutationId) return (incoming.syncSeq ?? 0) > (current.syncSeq ?? 0);
   return incoming.mutationId > current.mutationId;
 }
 

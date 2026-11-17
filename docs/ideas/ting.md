@@ -26,6 +26,8 @@ Avkrysning i butikken setter varen tilbake til Har. En ny vare starter som Tom. 
 
 Katalogen er varene som pleier å gå tomme, typisk 15–30 stykker. Den vokser når noen oppdager en vare, ikke ved å føre hele huset.
 
+Skann i Skapet er en snarvei til bunnarket. En strekkode som allerede hører til en vare i hjemmet åpner den varen, også uten nett. Ellers slår appen opp koden, først i Things sine egne produkter og så i Kassal. Finnes varen, foreslås navnet, og dere kan korte det ned til «Melk». Finnes den ikke, skriver dere navnet selv. Koden kan også kobles til en vare dere har. Bare navnet brukes, ikke bilde eller pris.
+
 ## Enhåndsbruk
 
 Telefonen holdes i én hånd. Tommelen skal nå hvert valg som setter eller fjerner en status, uten å flytte grepet.
@@ -69,7 +71,7 @@ Teknisk utgangspunkt til noen endrer det bevisst: få avhengigheter, og siste en
 - Antall og mengde
 - Rom og steder som struktur
 - Roller, barnelogin og flere hjem
-- Strekkode, utløpsdato, oppskrifter, budsjett og produktkatalog
+- Utløpsdato, oppskrifter, budsjett og produktkatalog
 - Push-varsel
 - Forslag om at en vare «pleier å gå tom på torsdag»
 

@@ -19,6 +19,8 @@ export interface Item {
   changedBy: string;
   mutationId: string;
   deletedAt: string | null;
+  /** Missing in snapshots saved before barcode scanning; treat as []. */
+  eans?: string[];
   syncSeq?: number;
 }
 

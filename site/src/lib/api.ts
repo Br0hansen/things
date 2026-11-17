@@ -73,3 +73,18 @@ export async function deleteRemoteHome(identity: Identity): Promise<void> {
   await callApi("delete_home", { confirmation: "SLETT" }, { deviceToken: identity.deviceToken });
 }
 
+
+export interface ProductLookup {
+  product: { ean: string; name: string; brand: string | null; source: "kassal" | "manual" } | null;
+  from?: "db" | "kassal";
+  rateLimited?: true;
+  unavailable?: true;
+}
+
+export async function lookupEan(identity: Identity, ean: string): Promise<ProductLookup> {
+  return callApi("lookup_ean", { ean }, { deviceToken: identity.deviceToken });
+}
+
+export async function saveProduct(identity: Identity, ean: string, name: string): Promise<{ ok: true }> {
+  return callApi("save_product", { ean, name }, { deviceToken: identity.deviceToken });
+}

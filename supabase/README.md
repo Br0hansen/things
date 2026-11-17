@@ -12,6 +12,10 @@ enhetsnøkler beholdes midlertidig slik at dagens hjem kan migreres uten datatap
 3. Kjør migrasjonen: `supabase db push`
 4. Sett tillatt app-origin:
    `supabase secrets set THINGS_ALLOWED_ORIGIN=https://br0hansen.github.io`
+   Sett nøkkelen for strekkodeoppslag:
+   `supabase secrets set KASSAL_API_KEY=<nøkkel fra kassal.app/profil/api>`
+   Kassal kalles høyst 5 ganger per minutt totalt for alle brukere. Uten nøkkel
+   virker skanning fortsatt, men bare mot produkter som allerede er lagret.
 5. Sett Auth Site URL til `https://br0hansen.github.io/things/` og tillat samme
    redirect-URL samt `http://127.0.0.1:5173/things/` for lokal utvikling.
    Innlogging skjer med engangskode, fordi en installert iOS-app og Safari
