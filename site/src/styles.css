@@ -120,11 +120,18 @@ input { width: 100%; min-height: 52px; border: 1px solid var(--line); border-rad
 .item-row { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 62px; border: 0; border-bottom: 1px solid var(--line); padding: 0 20px; background: transparent; font-size: 17px; text-align: left; cursor: pointer; }
 .item-row:last-child { border-bottom: 0; }
 .item-name { overflow: hidden; font-weight: 520; text-overflow: ellipsis; white-space: nowrap; }
-.status-chip { display: inline-flex; flex: none; align-items: center; gap: 5px; height: 28px; margin-left: 16px; border-radius: 14px; padding: 0 10px 0 8px; color: var(--text); font-size: 14px; font-weight: 650; }
-.status-chip svg { width: 14px; height: 14px; }
-.status-chip.have { background: var(--have-bg); }.status-chip.have svg { color: var(--have); }
-.status-chip.soon { background: var(--soon-bg); }.status-chip.soon svg { color: var(--soon); }
-.status-chip.empty { background: var(--empty-bg); }.status-chip.empty svg { color: var(--empty); }
+/* Skapet: a quiet row. Shape tells the status (full, half, ring); only Snart tom and Tom get words. */
+.cabinet-row { position: relative; justify-content: flex-start; gap: 14px; border-bottom: 0; }
+.cabinet-row:not(:last-child)::after { content: ""; position: absolute; right: 0; bottom: 0; left: 44px; border-bottom: 1px solid var(--line); }
+.cabinet-row .item-name { flex: 1; min-width: 0; }
+.cabinet-row.empty .item-name { font-weight: 650; }
+.status-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; }
+.status-dot.have { background: var(--have); }
+.status-dot.soon { background: linear-gradient(90deg, var(--soon) 50%, transparent 50%); box-shadow: inset 0 0 0 2px var(--soon); }
+.status-dot.empty { box-shadow: inset 0 0 0 2px var(--empty); }
+.status-label { flex: none; margin-left: 12px; font-size: 15px; font-weight: 560; }
+.status-label.soon { color: var(--soon-ink); }
+.status-label.empty { color: var(--empty-ink); }
 .status-summary { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; }
 .summary-pill { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; border: 1px solid var(--line); border-radius: 22px; padding: 0 12px; color: var(--muted); background: var(--fill); font-size: 13px; font-weight: 700; white-space: nowrap; cursor: pointer; }
 .summary-pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; opacity: .65; }

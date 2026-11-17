@@ -113,10 +113,6 @@ function StatusIcon({ status }: { status: ItemStatus }) {
   return <svg {...common} fill="none"><circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="2.6" /></svg>;
 }
 
-function StatusChip({ status }: { status: ItemStatus }) {
-  return <span class={`status-chip ${status}`}><StatusIcon status={status} />{STATUS_COPY[status].label}</span>;
-}
-
 function EmptyState({ title, text }: { title: string; text: string }) {
   return <div class="empty-state"><h2>{title}</h2><p>{text}</p></div>;
 }
@@ -585,9 +581,10 @@ export function App() {
           activeItems.length === 0 ? <EmptyState title="Ingen varer ennå" text="Bruk feltet nederst når du oppdager noe som mangler." /> :
           <div class="edge-list" aria-label="Varer i skapet">
             {visibleItems.map((item) => (
-              <button class="item-row" key={item.id} onClick={() => setSelectedItemId(item.id)}>
+              <button class={`item-row cabinet-row ${item.status}`} key={item.id} onClick={() => setSelectedItemId(item.id)}>
+                <span class={`status-dot ${item.status}`} aria-hidden="true" />
                 <span class="item-name">{item.name}</span>
-                <StatusChip status={item.status} />
+                {item.status === "have" ? <span class="sr-only">{STATUS_COPY.have.label}</span> : <span class={`status-label ${item.status}`}>{STATUS_COPY[item.status].label}</span>}
               </button>
             ))}
             {visibleItems.length === 0 && <p class="no-results">{query.trim() ? `Ingen varer passer med «${query.trim()}».` : "Ingen varer har de valgte statusene."}</p>}
